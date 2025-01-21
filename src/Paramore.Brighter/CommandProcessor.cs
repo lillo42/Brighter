@@ -103,8 +103,8 @@ namespace Paramore.Brighter
         /// </summary>
         private static IAmAnOutboxProducerMediator? s_mediator;
         private static readonly object s_padlock = new();
-        private static readonly ConcurrentDictionary<Type, Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, string, string>> s_deposit = new(); 
-        private static readonly ConcurrentDictionary<Type, Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, bool, CancellationToken, string, Task<string>>> s_depositAsync = new(); 
+        private static readonly ConcurrentDictionary<string, Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, string, string>> s_deposit = new(); 
+        private static readonly ConcurrentDictionary<string, Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, bool, CancellationToken, string, Task<string>>> s_depositAsync = new(); 
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CommandProcessor"/> class
@@ -645,7 +645,7 @@ namespace Paramore.Brighter
                 {
                     var createSpan = context.Span;
                     
-                    var deposit = s_deposit.GetOrAdd(typeof(TRequest), CreateCallDepositPost());
+                    var deposit = s_deposit.GetOrAdd(typeof(TRequest).Name, _ => CreateCallDepositPost());
                     var messageId =  deposit(this, request, transactionProvider, context, args, batchId);
                     successfullySentMessage.Add(messageId);
                     context.Span = createSpan;
@@ -679,16 +679,18 @@ namespace Paramore.Brighter
         }
 
         private static readonly MethodInfo s_callDepositMethod = typeof(CommandProcessor)
-            .GetMethod(nameof(CallDepositPost), BindingFlags.Instance | BindingFlags.NonPublic)!;
+            .GetMethod(nameof(CallDepositPost), BindingFlags.Static | BindingFlags.NonPublic)!;
         
-        private string CallDepositPost<TRequest, TTransaction>(object request,
+        private static string CallDepositPost<TRequest, TTransaction>(
+            CommandProcessor processor,
+            object request,
             object? amABoxTransactionProvider,
             RequestContext? requestContext, 
             Dictionary<string, object>? args, 
             string batchId)
             where TRequest : class, IRequest
         {
-            return DepositPost((TRequest)request, 
+            return processor.DepositPost((TRequest)request, 
                 (IAmABoxTransactionProvider<TTransaction>?)amABoxTransactionProvider,
                 requestContext, args, batchId);
         }
@@ -851,7 +853,7 @@ namespace Paramore.Brighter
                 foreach (var request in requests)
                 {
                     var createSpan = context.Span;
-                    var deposit = s_depositAsync.GetOrAdd(typeof(TRequest), CreateCallDepositPost());
+                    var deposit = s_depositAsync.GetOrAdd(typeof(TRequest).Name, _ => CreateCallDepositPost());
                     var messageId = await deposit(this, request, transactionProvider, context, args, continueOnCapturedContext, cancellationToken, batchId);
                     successfullySentMessage.Add(messageId); 
                     context.Span = createSpan;
@@ -884,9 +886,11 @@ namespace Paramore.Brighter
         }
 
         private static readonly MethodInfo s_callDepositAsyncMethod = typeof(CommandProcessor)
-            .GetMethod(nameof(CallDepositPostAsync), BindingFlags.Instance | BindingFlags.NonPublic)!;
+            .GetMethod(nameof(CallDepositPostAsync), BindingFlags.Static | BindingFlags.NonPublic)!;
         
-        private async Task<string> CallDepositPostAsync<TRequest, TTransaction>(object request,
+        private static async Task<string> CallDepositPostAsync<TRequest, TTransaction>(
+            CommandProcessor processor,
+            object request,
             object? amABoxTransactionProvider,
             RequestContext? requestContext, 
             Dictionary<string, object>? args, 
@@ -895,7 +899,7 @@ namespace Paramore.Brighter
             string batchId)
             where TRequest : class, IRequest
         {
-            return await DepositPostAsync((TRequest)request, 
+            return await processor.DepositPostAsync((TRequest)request, 
                 (IAmABoxTransactionProvider<TTransaction>?)amABoxTransactionProvider,
                 requestContext, args, continueOnCapturedContext, cancellationToken, batchId);
         }
@@ -1066,6 +1070,7 @@ namespace Paramore.Brighter
                 }
             }
             s_deposit.Clear();
+            s_depositAsync.Clear();
         }
 
         private void AssertValidSendPipeline<T>(T command, int handlerCount) where T : class, IRequest
