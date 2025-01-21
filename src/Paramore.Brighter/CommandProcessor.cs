@@ -103,7 +103,8 @@ namespace Paramore.Brighter
         /// </summary>
         private static IAmAnOutboxProducerMediator? s_mediator;
         private static readonly object s_padlock = new();
-        private static readonly ConcurrentDictionary<string, MethodInfo> s_boundDepositCalls = new(); 
+        private static readonly ConcurrentDictionary<Type, Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, string, string>> s_deposit = new(); 
+        private static readonly ConcurrentDictionary<Type, Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, bool, CancellationToken, string, Task<string>>> s_depositAsync = new(); 
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CommandProcessor"/> class
@@ -643,7 +644,9 @@ namespace Paramore.Brighter
                 foreach (var request in requests)
                 {
                     var createSpan = context.Span;
-                    var messageId = CallDepositPost(request, transactionProvider, context, args, batchId);
+                    
+                    var deposit = s_deposit.GetOrAdd(typeof(TRequest), CreateCallDepositPost());
+                    var messageId =  deposit(this, request, transactionProvider, context, args, batchId);
                     successfullySentMessage.Add(messageId);
                     context.Span = createSpan;
                 }
@@ -667,33 +670,27 @@ namespace Paramore.Brighter
             // so you need to call GetType to find the actual type. Our generic pipeline creates errors because our 
             // generic methods, like DepositPost, assume they have the derived type. This binds DepositPost to the right
             // type before we call it.
-            string CallDepositPost(TRequest actualRequest, IAmABoxTransactionProvider<TTransaction>? amABoxTransactionProvider, 
-                RequestContext? requestContext1, Dictionary<string, object>? dictionary, string batchId)
-            {
-                MethodInfo deposit;
-                var actualRequestType = actualRequest.GetType();
-
-                if (s_boundDepositCalls.ContainsKey(actualRequestType.Name))
-                {
-                    deposit = s_boundDepositCalls[actualRequestType.Name];
-                }
-                else
-                {
-                    var depositMethod = typeof(CommandProcessor)
-                        .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-                        .Where(m =>
-                            m.Name == nameof(DepositPost)
-                            && m.GetCustomAttributes().Any(a => a.GetType() == typeof(DepositCallSiteAttribute))
-                        )
-                        .FirstOrDefault(m => m.IsGenericMethod && m.GetParameters().Length == 5);
-
-                    deposit = depositMethod?.MakeGenericMethod(actualRequestType, typeof(TTransaction))!;
-                    
-                    s_boundDepositCalls[actualRequestType.Name] = deposit;
-                }
-
-                return (deposit?.Invoke(this, new object?[] { actualRequest, amABoxTransactionProvider, requestContext1, dictionary, batchId }) as string)!;
+            Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, string, string> CreateCallDepositPost()
+            { 
+                var method = s_callDepositMethod.MakeGenericMethod(typeof(TRequest), typeof(TTransaction));
+                return (Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, string, string>) method
+                    .CreateDelegate(typeof(Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, string, string>));
             }
+        }
+
+        private static readonly MethodInfo s_callDepositMethod = typeof(CommandProcessor)
+            .GetMethod(nameof(CallDepositPost), BindingFlags.Instance | BindingFlags.NonPublic)!;
+        
+        private string CallDepositPost<TRequest, TTransaction>(object request,
+            object? amABoxTransactionProvider,
+            RequestContext? requestContext, 
+            Dictionary<string, object>? args, 
+            string batchId)
+            where TRequest : class, IRequest
+        {
+            return DepositPost((TRequest)request, 
+                (IAmABoxTransactionProvider<TTransaction>?)amABoxTransactionProvider,
+                requestContext, args, batchId);
         }
 
         /// <summary>
@@ -854,9 +851,8 @@ namespace Paramore.Brighter
                 foreach (var request in requests)
                 {
                     var createSpan = context.Span;
-                    var messageId =
-                        await CallDepositPostAsync(request, transactionProvider, context, args, batchId);
-
+                    var deposit = s_depositAsync.GetOrAdd(typeof(TRequest), CreateCallDepositPost());
+                    var messageId = await deposit(this, request, transactionProvider, context, args, continueOnCapturedContext, cancellationToken, batchId);
                     successfullySentMessage.Add(messageId); 
                     context.Span = createSpan;
                 }
@@ -879,34 +875,29 @@ namespace Paramore.Brighter
             // so you need to call GetType to find the actual type. Our generic pipeline creates errors because our 
             // generic methods, like DepositPost, assume they have the derived type. This binds DepositPostAsync to the right
             // type before we call it.
-            Task<string> CallDepositPostAsync(TRequest actualRequest, IAmABoxTransactionProvider<TTransaction>? tp, 
-                RequestContext rc, Dictionary<string, object>? bag, string? batchId = null)
-            {
-                MethodInfo deposit;
-                var actualRequestType = actualRequest.GetType();
-
-                if (s_boundDepositCalls.ContainsKey(actualRequestType.Name))
-                {
-                    deposit = s_boundDepositCalls[actualRequestType.Name];
-                }
-                else
-                {
-                    var depositMethod = typeof(CommandProcessor)
-                        .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-                        .Where(m =>
-                            m.Name == nameof(DepositPostAsync)
-                            && m.GetCustomAttributes().Any(a => a.GetType() == typeof(DepositCallSiteAsyncAttribute))
-                        )
-                        .FirstOrDefault(m => m.IsGenericMethod && m.GetParameters().Length == 7);
-
-                    deposit = depositMethod?.MakeGenericMethod(actualRequest.GetType(), typeof(TTransaction))!;
-                    s_boundDepositCalls[actualRequestType.Name] = deposit;
-                }
-
-                return (Task<string>)deposit?
-                    .Invoke(this, new object?[] { actualRequest, tp, rc, bag, continueOnCapturedContext, cancellationToken, batchId }
-                )!;
+            Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, bool, CancellationToken, string, Task<string>> CreateCallDepositPost()
+            { 
+                var method = s_callDepositAsyncMethod.MakeGenericMethod(typeof(TRequest), typeof(TTransaction));
+                return (Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, bool, CancellationToken, string, Task<string>>) method
+                    .CreateDelegate(typeof(Func<CommandProcessor, object, object?, RequestContext?, Dictionary<string, object>?, bool, CancellationToken, string, Task<string>>));
             }
+        }
+
+        private static readonly MethodInfo s_callDepositAsyncMethod = typeof(CommandProcessor)
+            .GetMethod(nameof(CallDepositPostAsync), BindingFlags.Instance | BindingFlags.NonPublic)!;
+        
+        private async Task<string> CallDepositPostAsync<TRequest, TTransaction>(object request,
+            object? amABoxTransactionProvider,
+            RequestContext? requestContext, 
+            Dictionary<string, object>? args, 
+            bool continueOnCapturedContext,
+            CancellationToken cancellationToken,
+            string batchId)
+            where TRequest : class, IRequest
+        {
+            return await DepositPostAsync((TRequest)request, 
+                (IAmABoxTransactionProvider<TTransaction>?)amABoxTransactionProvider,
+                requestContext, args, continueOnCapturedContext, cancellationToken, batchId);
         }
 
         /// <summary>
@@ -1074,7 +1065,7 @@ namespace Paramore.Brighter
                     s_mediator = null;
                 }
             }
-            s_boundDepositCalls.Clear();
+            s_deposit.Clear();
         }
 
         private void AssertValidSendPipeline<T>(T command, int handlerCount) where T : class, IRequest
