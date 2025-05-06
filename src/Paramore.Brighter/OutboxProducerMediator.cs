@@ -57,6 +57,7 @@ namespace Paramore.Brighter
         private readonly IAmAnOutboxAsync<TMessage, TTransaction>? _asyncOutbox;
         private readonly int _outboxTimeout;
         private readonly IAmAProducerRegistry _producerRegistry;
+        private readonly IAmARoutingKeyResolver? _routingKeyResolver;
         private readonly InstrumentationOptions _instrumentationOptions;
         private readonly Dictionary<string, List<TMessage>> _outboxBatches = new();
 
@@ -72,7 +73,7 @@ namespace Paramore.Brighter
 
         private const string NoSyncOutboxError = "A sync Outbox must be defined.";
         private const string NoAsyncOutboxError = "An async Outbox must be defined.";
-            
+
         //Uses -1 to indicate no outbox and will thus force a throw on a failed publish
         private int _outStandingCount;
         private bool _disposed;
@@ -105,7 +106,7 @@ namespace Paramore.Brighter
             IAmAMessageMapperRegistry mapperRegistry,
             IAmAMessageTransformerFactory messageTransformerFactory,
             IAmAMessageTransformerFactoryAsync messageTransformerFactoryAsync,
-            IAmABrighterTracer tracer, 
+            IAmABrighterTracer tracer,
             IAmAnOutbox? outbox = null,
             IAmARequestContextFactory? requestContextFactory = null,
             int outboxTimeout = 300,
@@ -113,7 +114,8 @@ namespace Paramore.Brighter
             TimeSpan? maxOutStandingCheckInterval = null,
             Dictionary<string, object>? outBoxBag = null,
             TimeProvider? timeProvider = null,
-            InstrumentationOptions instrumentationOptions = InstrumentationOptions.All)
+            InstrumentationOptions instrumentationOptions = InstrumentationOptions.All,
+            IAmARoutingKeyResolver? routingKeyResolver = null)
         {
             _producerRegistry = producerRegistry ??
                                 throw new ConfigurationException("Missing Producer Registry for External Bus Services");
@@ -131,7 +133,7 @@ namespace Paramore.Brighter
             if (messageTransformerFactory is null || messageTransformerFactoryAsync is null)
                 throw new ConfigurationException(
                     "A Command Processor with an external bus must have a message transformer factory");
-            
+
             _timeProvider = timeProvider ?? TimeProvider.System;
             _lastOutStandingMessageCheckAt = _timeProvider.GetUtcNow();
 
@@ -143,8 +145,10 @@ namespace Paramore.Brighter
             outbox ??= new InMemoryOutbox(TimeProvider.System);
             outbox.Tracer = tracer;
 
-            if (outbox is IAmAnOutboxSync<TMessage, TTransaction> syncOutbox) _outBox = syncOutbox;
-            if (outbox is IAmAnOutboxAsync<TMessage, TTransaction> asyncOutbox) _asyncOutbox = asyncOutbox;
+            if (outbox is IAmAnOutboxSync<TMessage, TTransaction> syncOutbox)
+                _outBox = syncOutbox;
+            if (outbox is IAmAnOutboxAsync<TMessage, TTransaction> asyncOutbox)
+                _asyncOutbox = asyncOutbox;
 
             _outboxTimeout = outboxTimeout;
             _maxOutStandingMessages = maxOutStandingMessages;
@@ -152,6 +156,7 @@ namespace Paramore.Brighter
             _outBoxBag = outBoxBag ?? new Dictionary<string, object>();
             _instrumentationOptions = instrumentationOptions;
             _tracer = tracer;
+            _routingKeyResolver = routingKeyResolver;
 
             ConfigureCallbacks(requestContextFactory.Create());
         }
@@ -194,8 +199,9 @@ namespace Paramore.Brighter
             CancellationToken cancellationToken = default,
             string? batchId = null)
         {
-            if (_asyncOutbox is null) throw new ArgumentException(NoAsyncOutboxError);
-            
+            if (_asyncOutbox is null)
+                throw new ArgumentException(NoAsyncOutboxError);
+
             if (batchId != null)
             {
                 _outboxBatches[batchId].Add(message);
@@ -238,7 +244,8 @@ namespace Paramore.Brighter
             string? batchId = null
         )
         {
-            if (_outBox is null) throw new ArgumentException(NoSyncOutboxError);
+            if (_outBox is null)
+                throw new ArgumentException(NoSyncOutboxError);
             if (batchId != null)
             {
                 _outboxBatches[batchId].Add(message);
@@ -273,10 +280,10 @@ namespace Paramore.Brighter
         {
             //We assume that this only occurs over a blocking producer
             var producer = _producerRegistry.LookupSyncBy(outMessage.Header.Topic);
-                Retry(
-                    () => producer.Send(outMessage),
-                    requestContext
-                );
+            Retry(
+                () => producer.Send(outMessage),
+                requestContext
+            );
         }
 
         /// <summary>
@@ -303,7 +310,8 @@ namespace Paramore.Brighter
             var childSpans = new ConcurrentDictionary<string, Activity>();
             try
             {
-                if (_outBox is null) throw new ArgumentException(NoSyncOutboxError);
+                if (_outBox is null)
+                    throw new ArgumentException(NoSyncOutboxError);
                 foreach (var messageId in posts)
                 {
                     var span = _tracer?.CreateClearSpan(CommandProcessorSpanOperation.Clear, requestContext.Span,
@@ -313,7 +321,7 @@ namespace Paramore.Brighter
                         childSpans.TryAdd(messageId, span);
                         requestContext.Span = span;
                     }
-                    
+
                     var message = _outBox.Get(messageId, requestContext);
                     if (message is null || message.Header.MessageType == MessageType.MT_NONE)
                         throw new NullReferenceException($"Message with Id {messageId} not found in the Outbox");
@@ -361,12 +369,14 @@ namespace Paramore.Brighter
             var childSpans = new ConcurrentDictionary<string, Activity>();
             try
             {
-                if(_asyncOutbox is null)throw new ArgumentException(NoAsyncOutboxError);
+                if (_asyncOutbox is null)
+                    throw new ArgumentException(NoAsyncOutboxError);
                 foreach (var messageId in posts)
                 {
                     var span = _tracer?.CreateClearSpan(CommandProcessorSpanOperation.Clear, requestContext.Span,
                         messageId, _instrumentationOptions);
-                    if (span != null) childSpans.TryAdd(messageId, span);
+                    if (span != null)
+                        childSpans.TryAdd(messageId, span);
                     requestContext.Span = span;
 
                     var message = await _asyncOutbox.GetAsync(messageId, requestContext, _outboxTimeout, args,
@@ -432,7 +442,7 @@ namespace Paramore.Brighter
             {
                 return scheduler.Message;
             }
-            
+
             var message = MapMessage(request, requestContext);
             return message;
         }
@@ -457,7 +467,7 @@ namespace Paramore.Brighter
             {
                 return schedulerMessage.Message;
             }
-            
+
             var message = await MapMessageAsync(request, requestContext, cancellationToken);
             return message;
         }
@@ -514,8 +524,9 @@ namespace Paramore.Brighter
             BrighterTracer.WriteOutboxEvent(BoxDbOperation.Add, _outboxBatches[batchId], requestContext.Span,
                 transactionProvider != null, false, _instrumentationOptions);
 
-            if (_outBox is null) throw new ArgumentException(NoSyncOutboxError);
-            
+            if (_outBox is null)
+                throw new ArgumentException(NoSyncOutboxError);
+
             var written = Retry(() =>
                 {
                     _outBox.Add(_outboxBatches[batchId], requestContext, _outboxTimeout, transactionProvider);
@@ -543,8 +554,9 @@ namespace Paramore.Brighter
             BrighterTracer.WriteOutboxEvent(BoxDbOperation.Add, _outboxBatches[batchId], requestContext.Span,
                 transactionProvider != null, true, _instrumentationOptions);
 
-            if (_asyncOutbox is null) throw new ArgumentException(NoAsyncOutboxError);
-            
+            if (_asyncOutbox is null)
+                throw new ArgumentException(NoAsyncOutboxError);
+
             var written = await RetryAsync(
                 async _ =>
                 {
@@ -597,7 +609,7 @@ namespace Paramore.Brighter
                 // see https://learn.microsoft.com/en-us/dotnet/api/System.Threading.SemaphoreSlim.AvailableWaitHandle
                 await s_backgroundClearSemaphoreToken.WaitAsync(cancellationToken);
                 await s_clearSemaphoreToken.WaitAsync(cancellationToken);
-                
+
                 var parentSpan = requestContext.Span;
                 var span = _tracer.CreateClearSpan(CommandProcessorSpanOperation.Clear, requestContext.Span, null,
                     _instrumentationOptions);
@@ -605,7 +617,8 @@ namespace Paramore.Brighter
                 {
                     requestContext.Span = span;
 
-                    if (_asyncOutbox is null) throw new ArgumentException(NoAsyncOutboxError);
+                    if (_asyncOutbox is null)
+                        throw new ArgumentException(NoAsyncOutboxError);
                     var messages =
                         (await _asyncOutbox.OutstandingMessagesAsync(timeSinceSent, requestContext,
                             pageSize: amountToClear, args: args, cancellationToken: cancellationToken)).ToArray();
@@ -678,7 +691,7 @@ namespace Paramore.Brighter
             {
                 Log.CheckNotReadyToRunYet(s_logger);
                 return;
-            }                                                    
+            }
 
             Log.RunningOutstandingMessageCheck(s_logger, now, timeSinceLastCheck.TotalSeconds);
             //This is expensive, so use a background thread
@@ -711,7 +724,7 @@ namespace Paramore.Brighter
         {
             if (producer is ISupportPublishConfirmation producerSync)
             {
-                producerSync.OnMessagePublished += async delegate(bool success, string id)
+                producerSync.OnMessagePublished += async delegate (bool success, string id)
                 {
                     if (success)
                     {
@@ -738,7 +751,7 @@ namespace Paramore.Brighter
         {
             if (producer is ISupportPublishConfirmation producerSync)
             {
-                producerSync.OnMessagePublished += delegate(bool success, string id)
+                producerSync.OnMessagePublished += delegate (bool success, string id)
                 {
                     if (success)
                     {
@@ -756,7 +769,7 @@ namespace Paramore.Brighter
             return false;
         }
 
-        private void Dispatch(IEnumerable<Message> posts, 
+        private void Dispatch(IEnumerable<Message> posts,
             RequestContext requestContext,
             Dictionary<string, object>? args = null)
         {
@@ -764,7 +777,8 @@ namespace Paramore.Brighter
             var producerSpans = new ConcurrentDictionary<string, Activity>();
             try
             {
-                if (_outBox is null) throw new ArgumentException(NoSyncOutboxError);
+                if (_outBox is null)
+                    throw new ArgumentException(NoSyncOutboxError);
                 foreach (var message in posts)
                 {
                     Log.DecoupledInvocationOfMessage(s_logger, message.Header.Topic, message.Id);
@@ -773,7 +787,8 @@ namespace Paramore.Brighter
                     var span = _tracer?.CreateProducerSpan(producer.Publication, message, requestContext.Span,
                         _instrumentationOptions);
                     producer.Span = span;
-                    if (span != null) producerSpans.TryAdd(message.Id, span);
+                    if (span != null)
+                        producerSpans.TryAdd(message.Id, span);
 
                     if (producer is IAmAMessageProducerSync producerSync)
                     {
@@ -819,7 +834,8 @@ namespace Paramore.Brighter
             //Chunk into Topics
             try
             {
-                if (_asyncOutbox is null) throw new ArgumentException(NoAsyncOutboxError);
+                if (_asyncOutbox is null)
+                    throw new ArgumentException(NoAsyncOutboxError);
                 var messagesByTopic = posts.GroupBy(m => m.Header.Topic);
 
                 foreach (var topicBatch in messagesByTopic)
@@ -842,7 +858,7 @@ namespace Paramore.Brighter
 
 
                         var dispatchesMessages = bulkMessageProducer.SendAsync(messages, cancellationToken);
-                        
+
                         await foreach (var successfulMessage in dispatchesMessages)
                         {
                             if (!(producer is ISupportPublishConfirmation))
@@ -882,7 +898,8 @@ namespace Paramore.Brighter
 
             try
             {
-                if (_asyncOutbox is null) throw new ArgumentException(NoAsyncOutboxError);
+                if (_asyncOutbox is null)
+                    throw new ArgumentException(NoAsyncOutboxError);
                 foreach (var message in posts)
                 {
                     Log.DecoupledInvocationOfMessage(s_logger, message.Header.Topic, message.Id);
@@ -891,7 +908,8 @@ namespace Paramore.Brighter
                     var span = _tracer?.CreateProducerSpan(producer.Publication, message, parentSpan,
                         _instrumentationOptions);
                     producer.Span = span;
-                    if (span != null) producerSpans.TryAdd(message.Id, span);
+                    if (span != null)
+                        producerSpans.TryAdd(message.Id, span);
 
                     if (producer is IAmAMessageProducerAsync producerAsync)
                     {
@@ -945,9 +963,19 @@ namespace Paramore.Brighter
             where TRequest : class, IRequest
         {
             var publication = _producerRegistry.LookupPublication<TRequest>();
+            if (publication == null && _routingKeyResolver != null)
+            {
+                var routingKey = _routingKeyResolver.Resolve<TRequest>();
+                if (routingKey != null)
+                {
+                    publication = _producerRegistry.LookupSyncBy(routingKey).Publication;
+                }
+            }
+
             if (publication == null)
-                throw new ConfigurationException(
-                    $"No publication found for request {request.GetType().Name}");
+            {
+                throw new ConfigurationException($"No publicaiton founded for {typeof(TRequest).FullName}");
+            }
 
             Message message;
             if (_transformPipelineBuilder.HasPipeline<TRequest>())
@@ -972,9 +1000,19 @@ namespace Paramore.Brighter
             where TRequest : class, IRequest
         {
             var publication = _producerRegistry.LookupPublication<TRequest>();
+            if (publication == null && _routingKeyResolver != null)
+            {
+                var routingKey = _routingKeyResolver.Resolve<TRequest>();
+                if (routingKey != null)
+                {
+                    publication = _producerRegistry.LookupAsyncBy(routingKey).Publication;
+                }
+            }
+
             if (publication == null)
-                throw new ConfigurationException(
-                    $"No publication found for request {request.GetType().Name}");
+            {
+                throw new ConfigurationException($"No publicaiton founded for {typeof(TRequest).FullName}");
+            }
 
             Message message;
             if (_transformPipelineBuilderAsync.HasPipeline<TRequest>())
@@ -1068,51 +1106,51 @@ namespace Paramore.Brighter
 
             return true;
         }
-        
+
         private static partial class Log
         {
             [LoggerMessage(LogLevel.Information, "Found {NumberOfMessages} to clear out of amount {AmountToClear}")]
             public static partial void FoundMessagesToClear(ILogger logger, int numberOfMessages, int amountToClear);
-            
+
             [LoggerMessage(LogLevel.Debug, "Time since last check is {SecondsSinceLastCheck} seconds")]
             public static partial void TimeSinceLastCheck(ILogger logger, double secondsSinceLastCheck);
-            
+
             [LoggerMessage(LogLevel.Debug, "Check not ready to run yet")]
             public static partial void CheckNotReadyToRunYet(ILogger logger);
-            
+
             [LoggerMessage(LogLevel.Debug, "Running outstanding message check at {MessageCheckTime} after {SecondsSinceLastCheck} seconds wait")]
             public static partial void RunningOutstandingMessageCheck(ILogger logger, DateTimeOffset messageCheckTime, double secondsSinceLastCheck);
-            
+
             [LoggerMessage(LogLevel.Information, "Sent message: Id:{Id}")]
             public static partial void SentMessage(ILogger logger, string id);
-            
+
             [LoggerMessage(LogLevel.Information, "Decoupled invocation of message: Topic:{Topic} Id:{Id}")]
             public static partial void DecoupledInvocationOfMessage(ILogger logger, string topic, string id);
-            
+
             [LoggerMessage(LogLevel.Information, "Bulk Dispatching {NumberOfMessages} for Topic {TopicName}")]
             public static partial void BulkDispatchingMessages(ILogger logger, int numberOfMessages, string topicName);
-            
+
             [LoggerMessage(LogLevel.Debug, "Begin count of outstanding messages")]
             public static partial void BeginCountOfOutstandingMessages(ILogger logger);
-            
+
             [LoggerMessage(LogLevel.Error, "Error getting outstanding message count, reset count")]
             public static partial void ErrorGettingOutstandingMessageCount(ILogger logger, Exception ex);
-            
+
             [LoggerMessage(LogLevel.Debug, "Current outstanding count is {OutstandingCount}")]
             public static partial void CurrentOutstandingCount(ILogger logger, int outstandingCount);
-            
+
             [LoggerMessage(LogLevel.Error, "Exception whilst trying to publish message")]
             public static partial void ExceptionWhilstTryingToPublishMessage(ILogger logger, Exception exception);
-            
+
             [LoggerMessage(LogLevel.Information, "Messages have been cleared")]
             public static partial void MessagesHaveBeenCleared(ILogger logger);
-            
+
             [LoggerMessage(LogLevel.Error, "Error while dispatching from outbox")]
             public static partial void ErrorWhileDispatchingFromOutbox(ILogger logger, Exception exception);
-            
+
             [LoggerMessage(LogLevel.Information, "Skipping dispatch of messages as another thread is running")]
             public static partial void SkippingDispatchOfMessages(ILogger logger);
-            
+
             [LoggerMessage(LogLevel.Debug, "Outbox outstanding message count is: {OutstandingMessageCount}")]
             public static partial void OutboxOutstandingMessageCount(ILogger logger, int outstandingMessageCount);
         }

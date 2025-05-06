@@ -93,7 +93,7 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
 
             var mapperRegistry = new ServiceCollectionMessageMapperRegistry(services, options.MapperLifetime);
             services.TryAddSingleton(mapperRegistry);
-            
+
             services.TryAddSingleton(options.RequestContextFactory);
 
             if (options.FeatureSwitchRegistry != null)
@@ -101,12 +101,14 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
 
             //Add the policy registry
             IPolicyRegistry<string> policyRegistry;
-            if (options.PolicyRegistry == null) policyRegistry = new DefaultPolicy();
-            else policyRegistry = AddDefaults(options.PolicyRegistry);
+            if (options.PolicyRegistry == null)
+                policyRegistry = new DefaultPolicy();
+            else
+                policyRegistry = AddDefaults(options.PolicyRegistry);
 
             services.TryAdd(new ServiceDescriptor(typeof(IAmACommandProcessor), BuildCommandProcessor, options.CommandProcessorLifetime));
 
-            var builder =  new ServiceCollectionBrighterBuilder(
+            var builder = new ServiceCollectionBrighterBuilder(
                 services,
                 subscriberRegistry,
                 mapperRegistry,
@@ -153,7 +155,7 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
             {
                 throw new ConfigurationException("An external bus must have an IAmAProducerRegistry");
             }
-            
+
             brighterBuilder.Services.TryAddSingleton(busConfiguration.ProducerRegistry);
 
             //default to using System Transactions if nothing provided, so we always technically can share the outbox transaction
@@ -187,7 +189,7 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
                 transactionProvider, serviceLifetime);
             RegisterDynamoProviderServicesMaybe(brighterBuilder, busConfiguration.ConnectionProvider,
                 transactionProvider, serviceLifetime);
-            
+
             //we always need an outbox in case of producer callbacks
             var outbox = busConfiguration.Outbox ?? new InMemoryOutbox(TimeProvider.System);
 
@@ -221,7 +223,7 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
                         new ServiceDescriptor(asyncOutboxType, _ => outbox, ServiceLifetime.Singleton);
                 brighterBuilder.Services.Add(asyncOutboxdescriptor);
             }
-            
+
             // If no distributed locking service is added, then add the in memory variant
             var distributedLock = busConfiguration.DistributedLock ?? new InMemoryLock();
             brighterBuilder.Services.AddSingleton(distributedLock);
@@ -230,9 +232,9 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
             {
                 brighterBuilder.Services.TryAddSingleton<IUseRpc>(new UseRpc(busConfiguration.UseRpc, busConfiguration.ReplyQueueSubscriptions));
             }
-            
+
             brighterBuilder.Services.TryAddSingleton<IAmExternalBusConfiguration>(busConfiguration);
-           
+
             brighterBuilder.Services.TryAdd(new ServiceDescriptor(typeof(IAmAnOutboxProducerMediator),
                (serviceProvider) => BuildOutBoxProducerMediator(
                    serviceProvider, transactionType, busConfiguration, brighterBuilder.PolicyRegistry, outbox
@@ -241,37 +243,51 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
 
             return brighterBuilder;
         }
-        
-         /// <summary>
-         /// An external request scheduler factory
-         /// </summary>
-         /// <param name="builder">The builder.</param>
-         /// <param name="factory">The message scheduler factory</param>
-         /// <returns></returns>
-         public static IBrighterBuilder UseScheduler<T>(this IBrighterBuilder builder, T factory)
-            where T : IAmAMessageSchedulerFactory, IAmARequestSchedulerFactory
-         { 
-             builder
-                 .UseRequestScheduler(factory)
-                 .UseMessageScheduler(factory);
-             return builder;
-         }
-         
-         /// <summary>
-         /// An external request scheduler factory
-         /// </summary>
-         /// <param name="builder">The builder.</param>
-         /// <param name="factory">The message scheduler factory</param>
-         /// <returns></returns>
-         public static IBrighterBuilder UseScheduler<T>(this IBrighterBuilder builder, Func<IServiceProvider, T> factory)
-            where T : IAmAMessageSchedulerFactory, IAmARequestSchedulerFactory
-         {
-             builder
-                 .UseRequestScheduler(provider => factory(provider))
-                 .UseMessageScheduler(provider => factory(provider));
-             return builder;
-         }
-        
+
+        /// <summary>
+        /// An external request scheduler factory
+        /// </summary>
+        /// <param name="builder">The builder.</param>
+        /// <param name="factory">The message scheduler factory</param>
+        /// <returns></returns>
+        public static IBrighterBuilder UseScheduler<T>(this IBrighterBuilder builder, T factory)
+           where T : IAmAMessageSchedulerFactory, IAmARequestSchedulerFactory
+        {
+            builder
+                .UseRequestScheduler(factory)
+                .UseMessageScheduler(factory);
+            return builder;
+        }
+
+        public static IBrighterBuilder UseRoutingKeyResolver<T>(this IBrighterBuilder builder)
+            where T : class, IAmARoutingKeyResolver
+        {
+            builder.Services.TryAddTransient<IAmARoutingKeyResolver, T>();
+            return builder;
+        }
+
+        public static IBrighterBuilder UseRoutingKeyResolver<T>(this IBrighterBuilder builder, T instance)
+                    where T : class, IAmARoutingKeyResolver
+        {
+            builder.Services.TryAddSingleton<IAmARoutingKeyResolver>(instance);
+            return builder;
+        }
+
+        /// <summary>
+        /// An external request scheduler factory
+        /// </summary>
+        /// <param name="builder">The builder.</param>
+        /// <param name="factory">The message scheduler factory</param>
+        /// <returns></returns>
+        public static IBrighterBuilder UseScheduler<T>(this IBrighterBuilder builder, Func<IServiceProvider, T> factory)
+           where T : IAmAMessageSchedulerFactory, IAmARequestSchedulerFactory
+        {
+            builder
+                .UseRequestScheduler(provider => factory(provider))
+                .UseMessageScheduler(provider => factory(provider));
+            return builder;
+        }
+
         /// <summary>
         /// An external request scheduler factory
         /// </summary>
@@ -295,7 +311,7 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
             });
             return builder;
         }
-        
+
         /// <summary>
         /// An external request scheduler factory
         /// </summary>
@@ -307,7 +323,7 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
             builder.Services.AddSingleton(factory);
             return builder;
         }
-        
+
         /// <summary>
         /// An external message scheduler factory
         /// </summary>
@@ -327,7 +343,7 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
             builder.Services.TryAddSingleton(provide => (IAmAMessageSchedulerSync)provide.GetRequiredService<IAmAMessageScheduler>());
             return builder;
         }
-        
+
         /// <summary>
         /// An external message scheduler factory
         /// </summary>
@@ -339,7 +355,7 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
             builder.Services.AddSingleton(factory);
             return builder;
         }
-        
+
         private static INeedInstrumentation AddEventBus(
             IServiceProvider provider,
             INeedMessaging messagingBuilder,
@@ -354,7 +370,8 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
             var hasEventBus = eventBus != null;
             bool useRpc = useRequestResponse != null && useRequestResponse.RPC;
 
-            if (!hasEventBus) instrumentationBuilder = messagingBuilder.NoExternalBus();
+            if (!hasEventBus)
+                instrumentationBuilder = messagingBuilder.NoExternalBus();
 
             if (hasEventBus && !useRpc)
             {
@@ -412,19 +429,19 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
 
             if (featureSwitchRegistry != null)
                 handlerBuilder = handlerBuilder.ConfigureFeatureSwitches(featureSwitchRegistry);
-            
+
             var policyBuilder = handlerBuilder.Handlers(handlerConfiguration);
 
             var messagingBuilder = options.PolicyRegistry == null
                 ? policyBuilder.DefaultPolicy()
                 : policyBuilder.Policies(options.PolicyRegistry);
-            
+
             var command = AddEventBus(provider, messagingBuilder, useRequestResponse)
                 .ConfigureInstrumentation(provider.GetService<IAmABrighterTracer>(), options.InstrumentationOptions)
                 .RequestContextFactory(provider.GetService<IAmARequestContextFactory>())
                 .RequestSchedulerFactory(provider.GetRequiredService<IAmARequestSchedulerFactory>())
                 .Build();
-            
+
             var eventBusConfiguration = provider.GetService<IAmExternalBusConfiguration>();
             var producerRegistry = provider.GetService<IAmAProducerRegistry>();
             var messageSchedulerFactory = eventBusConfiguration?.MessageSchedulerFactory ?? provider.GetRequiredService<IAmAMessageSchedulerFactory>();
@@ -433,12 +450,12 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
 
             return command;
         }
-        
+
         private static IAmAnOutboxProducerMediator BuildOutBoxProducerMediator(IServiceProvider serviceProvider,
             Type transactionType,
             ExternalBusConfiguration busConfiguration,
             IPolicyRegistry<string> policyRegistry,
-            IAmAnOutbox outbox) 
+            IAmAnOutbox outbox)
         {
             //Because the bus has specialized types as members, we need to create the bus type dynamically
             //again to prevent someone configuring Brighter from having to pass generic types
@@ -459,7 +476,8 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
                 busConfiguration.MaxOutStandingCheckInterval,
                 busConfiguration.OutBoxBag,
                 TimeProvider.System,
-                busConfiguration.InstrumentationOptions);
+                busConfiguration.InstrumentationOptions,
+                serviceProvider.GetService<IAmARoutingKeyResolver>());
         }
 
         /// <summary>
@@ -506,7 +524,7 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
             {
                 messageMapperRegistry.RegisterAsync(messageMapper.Key, messageMapper.Value);
             }
-            
+
 
             return messageMapperRegistry;
         }
@@ -565,7 +583,7 @@ namespace Paramore.Brighter.Extensions.DependencyInjection
         {
             return provider.GetService<IAmARequestContextFactory>();
         }
-        
+
         private static IAmABrighterTracer Tracer(IServiceProvider serviceProvider)
         {
             return serviceProvider.GetService<BrighterTracer>();

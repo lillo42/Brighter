@@ -1,60 +1,62 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
+using System.Reflection;
 
 namespace Paramore.Brighter
 {
-    public class ProducerRegistry(Dictionary<RoutingKey, IAmAMessageProducer>? messageProducers) 
-        : IAmAProducerRegistry
+    public class ProducerRegistry(Dictionary<RoutingKey, IAmAMessageProducer>? messageProducers) : IAmAProducerRegistry
     {
+        private static readonly ConcurrentDictionary<Type, RoutingKey?> s_typeRoutingKeyCache = new();
+
         private readonly bool _hasProducers = messageProducers != null && messageProducers.Any();
-        
+
         /// <summary>
         /// An iterable list of all the producers in the registry
         /// </summary>
         public IEnumerable<IAmAMessageProducer> Producers { get { return messageProducers is not null ? messageProducers.Values : Array.Empty<IAmAMessageProducer>(); } }
-        
-        /// <summary>
-        /// An iterable list of all the sync producers in the registry
-        /// </summary>
-        public IEnumerable<IAmAMessageProducerSync> ProducersSync => messageProducers is not null ? messageProducers.Values.Cast<IAmAMessageProducerSync>() : Array.Empty<IAmAMessageProducerSync>(); 
 
         /// <summary>
         /// An iterable list of all the sync producers in the registry
         /// </summary>
-        public IEnumerable<IAmAMessageProducerAsync> ProducersAsync => messageProducers is not null ? messageProducers.Values.Cast<IAmAMessageProducerAsync>() : Array.Empty<IAmAMessageProducerAsync>(); 
+        public IEnumerable<IAmAMessageProducerSync> ProducersSync => messageProducers is not null ? messageProducers.Values.Cast<IAmAMessageProducerSync>() : Array.Empty<IAmAMessageProducerSync>();
 
+        /// An iterable list of all the sync producers in the registry
+        /// <summary>
+        /// </summary>
+        public IEnumerable<IAmAMessageProducerAsync> ProducersAsync => messageProducers is not null ? messageProducers.Values.Cast<IAmAMessageProducerAsync>() : Array.Empty<IAmAMessageProducerAsync>();
 
         /// <summary>
         /// Will call CloseAll to terminate producers
         /// </summary>
-         public void Dispose()
-         {
-             CloseAll(); 
-             GC.SuppressFinalize(this);
-         }
- 
-         ~ProducerRegistry()
-         {
-             CloseAll();
-         }
+        public void Dispose()
+        {
+            CloseAll();
+            GC.SuppressFinalize(this);
+        }
 
-         /// <summary>
-         /// Iterates through all the producers and disposes them, as they may have unmanaged resources that should be shut down in an orderly fashion
-         /// </summary>
-         public void CloseAll()
-         {
-             if (messageProducers is not null)
-             {
-                 foreach (var producer in messageProducers)
-                 {
-                     if (producer.Value is IDisposable disposable)
-                         disposable.Dispose();
-                 }
+        ~ProducerRegistry()
+        {
+            CloseAll();
+        }
 
-                 messageProducers.Clear();
-             }
-         }
+        /// <summary>
+        /// Iterates through all the producers and disposes them, as they may have unmanaged resources that should be shut down in an orderly fashion
+        /// </summary>
+        public void CloseAll()
+        {
+            if (messageProducers is not null)
+            {
+                foreach (var producer in messageProducers)
+                {
+                    if (producer.Value is IDisposable disposable)
+                        disposable.Dispose();
+                }
+
+                messageProducers.Clear();
+            }
+        }
 
 
         /// <summary>
@@ -66,7 +68,7 @@ namespace Paramore.Brighter
         {
             if (!_hasProducers)
                 throw new ConfigurationException("No producers found in the registry");
-            
+
             return messageProducers![topic];
         }
 
@@ -79,7 +81,7 @@ namespace Paramore.Brighter
         {
             return (IAmAMessageProducerAsync)LookupBy(topic);
         }
-        
+
         /// <summary>
         /// Looks up the producer associated with this message via a topic. The topic lives on the message headers
         /// </summary>
@@ -96,23 +98,45 @@ namespace Paramore.Brighter
         /// <typeparam name="TRequest">The type of the request</typeparam>
         /// <returns></returns>
         /// <exception cref="ConfigurationException">Thrown if we have too many publications or none at all</exception>
-        public Publication LookupPublication<TRequest>() where TRequest : class, IRequest
+        public Publication? LookupPublication<TRequest>() where TRequest : class, IRequest
         {
-            var publications = from producer in messageProducers
-            where producer.Value.Publication.RequestType == typeof(TRequest)
-                select producer.Value.Publication;
+            if (messageProducers == null)
+            {
+                return null;
+            }
 
-            var publicationsArray = publications as Publication[] ?? publications.ToArray();
-            
-            if (publicationsArray.Count() > 1)
-                throw new ConfigurationException("Only one producer per request type is supported. Have you added the request type to multiple Publications?");
-            
-            var publication = publicationsArray.FirstOrDefault();
-            
-            if (publication is null)
-                throw new ConfigurationException("No producer found for request type. Have you set the request type on the Publication?");
+            var routingKey = s_typeRoutingKeyCache.GetOrAdd(typeof(TRequest), GetRoutingKeyFromAttributes);
 
-            return publication;
+            if (routingKey != null)
+            {
+                var producer = LookupBy(routingKey);
+                return producer.Publication;
+            }
+
+            var publications = messageProducers.Values
+                .Where(x => x.Publication.RequestType == typeof(TRequest))
+                .Select(x => x.Publication)
+                .ToArray() ?? [];
+
+            if (publications.Length == 1)
+            {
+                return publications[0];
+            }
+            else
+            {
+                return null;
+            }
+            }
+
+        private static RoutingKey? GetRoutingKeyFromAttributes(Type type)
+        {
+            var attribute = type.GetCustomAttribute<RoutingKeyAttribute>(false);
+            if (attribute == null)
+            {
+                return null;
+            }
+
+            return new RoutingKey(attribute.RoutingKey);
         }
     }
 }
