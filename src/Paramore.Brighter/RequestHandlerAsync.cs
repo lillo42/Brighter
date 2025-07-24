@@ -27,6 +27,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using JetBrains.Annotations;
 using Microsoft.Extensions.Logging;
 using Paramore.Brighter.Logging;
 using Paramore.Brighter.Observability;
@@ -51,6 +52,7 @@ namespace Paramore.Brighter
     /// </summary>
     /// <typeparam name="TRequest">The type of the t request.</typeparam>
     /// <param name="instrumentationOptions">The <see cref="InstrumentationOptions"/> for how deep should the instrumentation go?</param>
+    [UsedImplicitly(ImplicitUseTargetFlags.Itself | ImplicitUseTargetFlags.WithInheritors)]
     public abstract partial class RequestHandlerAsync<TRequest>(InstrumentationOptions instrumentationOptions = InstrumentationOptions.All) : IHandleRequestsAsync<TRequest> where TRequest : class, IRequest
     {
         private static readonly ILogger s_logger= ApplicationLogging.CreateLogger<RequestHandlerAsync<TRequest>>();
