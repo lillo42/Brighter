@@ -2,10 +2,10 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
-
     <AwsDynamoDbV4>4.0.1.9</AwsDynamoDbV4>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="Apache.NMS.ActiveMQ" Version="2.1.1" />
     <PackageVersion Include="AWSSDK.DynamoDBv2" Version="[3.7.407.23, 4)" />
     <PackageVersion Include="AWSSDK.IdentityManagement" Version="[3.7.406.11, 4)" />
     <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="[3.7.400, 4)" />
