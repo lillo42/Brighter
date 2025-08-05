@@ -9,5 +9,6 @@ public class HeaderNames
     public const string Source = "source";
     public const string Subject = "subject";
     public const string Topic = "topic";
-    
+    public const string ReceiptHandle = "ReceiptHandle";
+
 }
