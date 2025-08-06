@@ -45,27 +45,19 @@ public class AsyncExternalServiceBusArchiveObservabilityTests
 
         Brighter.CommandProcessor.ClearServiceBus();
 
+        var type = new CloudEventsType("io.goparamore.brighter.myevent");
         _publication = new Publication
         {
             Source = new Uri("http://localhost"),
             RequestType = typeof(MyEvent),
             Topic = _routingKey,
-            Type = nameof(MyEvent),
+            Type = type,
         };
 
-        var producer = new InMemoryMessageProducer(internalBus, _timeProvider, InstrumentationOptions.All)
-        {
-            Publication = _publication
-        };
+        var producer = new InMemoryMessageProducer(internalBus, _timeProvider, _publication);
 
         var producerRegistry =
-            new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer> { { _routingKey, producer } });
-
-        var retryPolicy = Policy
-            .Handle<Exception>()
-            .RetryAsync();
-
-        var policyRegistry = new PolicyRegistry { { Brighter.CommandProcessor.RETRYPOLICYASYNC, retryPolicy } };
+            new ProducerRegistry(new Dictionary<ProducerKey, IAmAMessageProducer> { { new ProducerKey(_routingKey, type), producer } });
 
         var messageMapperRegistry = new MessageMapperRegistry(
             new SimpleMessageMapperFactory((_) => new MyEventMessageMapper()),
@@ -76,7 +68,7 @@ public class AsyncExternalServiceBusArchiveObservabilityTests
 
         _bus = new OutboxProducerMediator<Message, CommittableTransaction>(
             producerRegistry,
-            policyRegistry,
+            new ResiliencePipelineRegistry<string>().AddBrighterDefault(),
             messageMapperRegistry,
             new EmptyMessageTransformerFactory(),
             new EmptyMessageTransformerFactoryAsync(),
@@ -94,9 +86,8 @@ public class AsyncExternalServiceBusArchiveObservabilityTests
     {
         var parentActivity = new ActivitySource("Paramore.Brighter.Tests").StartActivity("BrighterTracerSpanTests");
         
-        var context = new RequestContext();
-        context.Span = parentActivity;
-        
+        var context = new RequestContext { Span = parentActivity };
+
         //add and clear message
         var myEvent = new MyEvent();
         var myMessage = new MyEventMessageMapper().MapToMessage(myEvent, _publication);
@@ -127,7 +118,7 @@ public class AsyncExternalServiceBusArchiveObservabilityTests
         //We should have exported matching activities
         Assert.Equal(9, _exportedActivities.Count);
 
-        Assert.True(_exportedActivities.Any(a => a.Source.Name == "Paramore.Brighter"));
+        Assert.Contains(_exportedActivities, a => a.Source.Name == "Paramore.Brighter");
 
         //there should be an archive create span for the batch
         var createActivity = _exportedActivities.Single(a => a.DisplayName == $"{BrighterSemanticConventions.ArchiveMessages} {CommandProcessorSpanOperation.Archive.ToSpanName()}");

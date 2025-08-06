@@ -90,6 +90,7 @@ public class RMQMessageConsumerRetryDLQTests : IDisposable
             handlerFactory: new QuickHandlerFactory(() => handler),
             requestContextFactory: new InMemoryRequestContextFactory(),
             policyRegistry: new PolicyRegistry(),
+            resilienceResiliencePipelineRegistry: new ResiliencePipelineRegistry<string>(),
             requestSchedulerFactory: new InMemorySchedulerFactory()
         );
 
@@ -101,7 +102,7 @@ public class RMQMessageConsumerRetryDLQTests : IDisposable
             
         messageMapperRegistry.Register<MyDeferredCommand, MyDeferredCommandMessageMapper>();
             
-        _messagePump = new Reactor<MyDeferredCommand>(commandProcessor, messageMapperRegistry, 
+        _messagePump = new ServiceActivator.Reactor(commandProcessor, (message) => typeof(MyDeferredCommand), messageMapperRegistry, 
             new EmptyMessageTransformerFactory(), new InMemoryRequestContextFactory(), _channel)
         {
             Channel = _channel, TimeOut = TimeSpan.FromMilliseconds(5000), RequeueCount = 0

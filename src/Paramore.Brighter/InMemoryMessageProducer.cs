@@ -26,7 +26,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Paramore.Brighter.Observability;
@@ -37,18 +36,33 @@ namespace Paramore.Brighter
     /// The in-memory producer is mainly intended for usage with tests. It allows you to send messages to a bus and
     /// then inspect the messages that have been sent.
     /// </summary>
-    /// <param name="bus">An instance of <see cref="IAmABus"/> typically we use an <see cref="InternalBus"/></param>
-    /// <param name="timeProvider"></param>
-    /// <param name="instrumentationOptions">The <see cref="InstrumentationOptions"/> for how deep should the instrumentation go?</param>
-    public sealed class InMemoryMessageProducer(IAmABus bus, TimeProvider timeProvider, InstrumentationOptions instrumentationOptions)
-        : IAmAMessageProducerSync, IAmAMessageProducerAsync, IAmABulkMessageProducerAsync
+    public sealed class InMemoryMessageProducer : IAmAMessageProducerSync, IAmAMessageProducerAsync, IAmABulkMessageProducerAsync
     {
         private ITimer? _requeueTimer;
+        private readonly IAmABus _bus;
+        private readonly TimeProvider _timeProvider;
+        private readonly InstrumentationOptions _instrumentationOptions;
+
+        /// <summary>
+        /// The in-memory producer is mainly intended for usage with tests. It allows you to send messages to a bus and
+        /// then inspect the messages that have been sent.
+        /// </summary>
+        /// <param name="bus">An instance of <see cref="IAmABus"/> typically we use an <see cref="InternalBus"/></param>
+        /// <param name="timeProvider">The <see cref="TimeProvider"/> we use to</param>
+        /// <param name="publication">The <see cref="Publication"/> that we want to sent messages to via the publication; if null defaults to a Publication with a Topic of "Internal"</param>
+        /// <param name="instrumentationOptions">The <see cref="InstrumentationOptions"/> for how deep should the instrumentation go?</param>
+        public InMemoryMessageProducer(IAmABus bus, TimeProvider? timeProvider = null, Publication? publication = null, InstrumentationOptions instrumentationOptions = InstrumentationOptions.All)
+        {
+            _bus = bus;
+            _timeProvider = timeProvider ?? TimeProvider.System;
+            _instrumentationOptions = instrumentationOptions;
+            Publication = publication ?? new Publication { Topic = new RoutingKey("Internal") };
+        }
 
         /// <summary>
         /// The publication that describes what the Producer is for
         /// </summary>
-        public Publication Publication { get; set; } = new();
+        public Publication Publication { get; set; }  
 
         /// <summary>
         /// Used for OTel tracing. We use property injection to set this, so that we can use the same tracer across all
@@ -93,36 +107,44 @@ namespace Paramore.Brighter
         /// <returns></returns>
         public Task SendAsync(Message message, CancellationToken cancellationToken = default)
         {
-            BrighterTracer.WriteProducerEvent(Span, MessagingSystem.InternalBus, message, instrumentationOptions);
+            BrighterTracer.WriteProducerEvent(Span, MessagingSystem.InternalBus, message, _instrumentationOptions);
             var tcs = new TaskCompletionSource<Message>(TaskCreationOptions.RunContinuationsAsynchronously);
-            bus.Enqueue(message);
+            _bus.Enqueue(message);
             OnMessagePublished?.Invoke(true, message.Id);
             tcs.SetResult(message);
             return tcs.Task;
         }
 
         /// <summary>
-        /// Send messages to a broker; in this case an <see cref="InternalBus"/> 
+        /// Sends a batch of messages.
         /// </summary>
-        /// <param name="messages">The list of messages to send</param>
-        /// <param name="cancellationToken">A cancellation token to end the operation</param>
-        /// <returns></returns>
+        /// <param name="batch">A batch of messages to send</param>
+        /// <param name="cancellationToken">The Cancellation Token.</param>
+        /// <exception cref="NotImplementedException"></exception>
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-        public async IAsyncEnumerable<Id[]> SendAsync(
-            IEnumerable<Message> messages,
-            [EnumeratorCancellation] CancellationToken cancellationToken
-            )
+        public Task SendAsync(IAmAMessageBatch batch, CancellationToken cancellationToken)
 #pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
         {
-            var msgs = messages as Message[] ?? messages.ToArray();
-            foreach (var msg in msgs)
+            if (batch is not MessageBatch messageBatch)
+                throw new NotImplementedException($"{nameof(SendAsync)} only supports ${typeof(MessageBatch)}");
+
+            var messages = messageBatch!.Messages as Message[] ?? messageBatch.Messages.ToArray();
+            foreach (var message in messages)
             {
-                BrighterTracer.WriteProducerEvent(Span, MessagingSystem.InternalBus, msg, instrumentationOptions);
-                bus.Enqueue(msg);
-                OnMessagePublished?.Invoke(true, msg.Id);
-                yield return [msg.Id];
+                BrighterTracer.WriteProducerEvent(Span, MessagingSystem.InternalBus, message, _instrumentationOptions);
+                _bus.Enqueue(message);
+                OnMessagePublished?.Invoke(true, message.Id);
             }
+
+            return Task.CompletedTask;
         }
+
+        /// <summary>
+        /// Creates message batches
+        /// </summary>
+        /// <param name="messages">A collection of messages to create batches for</param>
+        public IEnumerable<IAmAMessageBatch> CreateBatches(IEnumerable<Message> messages) 
+            => [new MessageBatch(messages)];
 
         /// <summary>
         /// Send a message to a broker; in this case an <see cref="InternalBus"/>
@@ -130,8 +152,8 @@ namespace Paramore.Brighter
         /// <param name="message">The message to send</param>
         public void Send(Message message)
         {
-            BrighterTracer.WriteProducerEvent(Span, MessagingSystem.InternalBus, message, instrumentationOptions);
-            bus.Enqueue(message);
+            BrighterTracer.WriteProducerEvent(Span, MessagingSystem.InternalBus, message, _instrumentationOptions);
+            _bus.Enqueue(message);
             OnMessagePublished?.Invoke(true, message.Id);
         }
 
@@ -146,7 +168,7 @@ namespace Paramore.Brighter
             delay ??= TimeSpan.FromMilliseconds(0);
 
             //we don't want to block, so we use a timer to invoke the requeue after a delay
-            _requeueTimer = timeProvider.CreateTimer(
+            _requeueTimer = _timeProvider.CreateTimer(
                 msg => Send((Message)msg!),
                 message,
                 delay.Value,
@@ -166,7 +188,7 @@ namespace Paramore.Brighter
             delay ??= TimeSpan.FromMilliseconds(0);
 
             //we don't want to block, so we use a timer to invoke the requeue after a delay
-            _requeueTimer = timeProvider.CreateTimer(
+            _requeueTimer = _timeProvider.CreateTimer(
                 msg => SendAsync((Message)msg!, cancellationToken),
                 message,
                 delay.Value,

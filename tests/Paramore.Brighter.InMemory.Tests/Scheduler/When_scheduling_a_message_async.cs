@@ -59,10 +59,7 @@ public class InMemorySchedulerMessageAsyncTests
 
         var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
         {
-            [_routingKey] = new InMemoryMessageProducer(_internalBus, _timeProvider, InstrumentationOptions.All)
-            {
-                Publication = { Topic = _routingKey, RequestType = typeof(MyEvent) }
-            }
+            [_routingKey] = new InMemoryMessageProducer(_internalBus, _timeProvider,new Publication{ Topic = _routingKey, RequestType = typeof(MyEvent) })
         });
 
         var messageMapperRegistry = new MessageMapperRegistry(
@@ -81,7 +78,7 @@ public class InMemorySchedulerMessageAsyncTests
 
         var outboxBus = new OutboxProducerMediator<Message, CommittableTransaction>(
             producerRegistry,
-            policyRegistry,
+            new ResiliencePipelineRegistry<string>().AddBrighterDefault(),
             messageMapperRegistry,
             new EmptyMessageTransformerFactory(),
             new EmptyMessageTransformerFactoryAsync(),
@@ -96,6 +93,7 @@ public class InMemorySchedulerMessageAsyncTests
             handlerFactory,
             new InMemoryRequestContextFactory(),
             policyRegistry,
+            new ResiliencePipelineRegistry<string>(),
             outboxBus,
             _scheduler
         );
@@ -114,9 +112,9 @@ public class InMemorySchedulerMessageAsyncTests
         var id = await scheduler.ScheduleAsync(message,
             _timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(1)));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
 
-        Assert.Empty(_internalBus.Stream(_routingKey) ?? []);
+        Assert.Empty(_internalBus.Stream(_routingKey));
 
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
         
@@ -151,9 +149,9 @@ public class InMemorySchedulerMessageAsyncTests
         var scheduler = (IAmAMessageSchedulerAsync)_scheduler.Create(_processor);
         var id = await scheduler.ScheduleAsync(message, TimeSpan.FromSeconds(1));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
 
-        Assert.Empty(_internalBus.Stream(_routingKey) ?? []);
+        Assert.Empty(_internalBus.Stream(_routingKey));
 
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
 
@@ -187,13 +185,13 @@ public class InMemorySchedulerMessageAsyncTests
         var scheduler = (IAmAMessageSchedulerAsync)_scheduler.Create(_processor);
         var id = await scheduler.ScheduleAsync(message, _timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(1)));
 
-        Assert.True(id.Any());
-        Assert.Empty(_internalBus.Stream(_routingKey) ?? []);
+        Assert.NotEqual(0, id.Length);
+        Assert.Empty(_internalBus.Stream(_routingKey));
 
         await scheduler.ReSchedulerAsync(id, _timeProvider.GetUtcNow().Add(TimeSpan.FromHours(1)));
 
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
-        Assert.Empty(_internalBus.Stream(_routingKey) ?? []);
+        Assert.Empty(_internalBus.Stream(_routingKey));
 
         _timeProvider.Advance(TimeSpan.FromHours(2));
 
@@ -227,13 +225,13 @@ public class InMemorySchedulerMessageAsyncTests
         var scheduler = (IAmAMessageSchedulerAsync)_scheduler.Create(_processor);
         var id = await scheduler.ScheduleAsync(message, TimeSpan.FromHours(1));
 
-        Assert.True(id.Any());
-        Assert.Empty(_internalBus.Stream(_routingKey) ?? []);
+        Assert.NotEqual(0, id.Length);
+        Assert.Empty(_internalBus.Stream(_routingKey));
 
         await scheduler.ReSchedulerAsync(id, TimeSpan.FromHours(1));
 
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
-        Assert.Empty(_internalBus.Stream(_routingKey) ?? []);
+        Assert.Empty(_internalBus.Stream(_routingKey));
 
         _timeProvider.Advance(TimeSpan.FromHours(2));
         Assert.NotEmpty(_internalBus.Stream(_routingKey));
@@ -253,7 +251,7 @@ public class InMemorySchedulerMessageAsyncTests
         var scheduler = (IAmAMessageSchedulerAsync)_scheduler.Create(_processor);
         var id = await scheduler.ScheduleAsync(message, _timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(1)));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
         
         await scheduler.CancelAsync(id);
 
@@ -289,7 +287,7 @@ public class InMemorySchedulerMessageAsyncTests
         var scheduler = (IAmAMessageSchedulerAsync)_scheduler.Create(_processor);
         var id = await scheduler.ScheduleAsync(message, TimeSpan.FromHours(1));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
 
         await scheduler.CancelAsync(id);
 

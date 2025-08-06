@@ -60,25 +60,25 @@ public class MessageDispatchPropogateContextTests
             null);
         messageMapperRegistry.Register<MyEvent, MyEventMessageMapper>();
 
-        InMemoryMessageProducer messageProducer = new(_internalBus, timeProvider, InstrumentationOptions.All)
-        {
-            Publication =
+        var cloudEventsType = new CloudEventsType("io.goparamore.brighter.myevent");
+        InMemoryMessageProducer messageProducer = new(_internalBus, timeProvider,
+            new Publication
             {
                 Source = new Uri("http://localhost"),
                 RequestType = typeof(MyEvent),
                 Topic = _routingKey,
-                Type = nameof(MyEvent),
+                Type = cloudEventsType,
             }
-        };
+        );
 
-        var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
+        var producerRegistry = new ProducerRegistry(new Dictionary<ProducerKey, IAmAMessageProducer>
         {
-            {_routingKey, messageProducer}
+            {new ProducerKey(_routingKey, cloudEventsType), messageProducer}
         });
         
          _mediator = new OutboxProducerMediator<Message, CommittableTransaction>(
             producerRegistry, 
-            policyRegistry, 
+            new ResiliencePipelineRegistry<string>().AddBrighterDefault(), 
             messageMapperRegistry, 
             new EmptyMessageTransformerFactory(), 
             new EmptyMessageTransformerFactoryAsync(),
@@ -93,6 +93,7 @@ public class MessageDispatchPropogateContextTests
             handlerFactory, 
             new InMemoryRequestContextFactory(),
             policyRegistry, 
+            new ResiliencePipelineRegistry<string>(),
             _mediator,
             new InMemorySchedulerFactory(),
             tracer: tracer, 
@@ -131,8 +132,8 @@ public class MessageDispatchPropogateContextTests
         var message = messages.FirstOrDefault(m => m.Id == messageId);
         Assert.NotNull(message);
         Assert.NotNull(message.Header.TraceParent);
+        
         //? What is tracestate 
         Assert.Equal("key=value,key2=value2", message.Header.Baggage.ToString());
-
     }
 }

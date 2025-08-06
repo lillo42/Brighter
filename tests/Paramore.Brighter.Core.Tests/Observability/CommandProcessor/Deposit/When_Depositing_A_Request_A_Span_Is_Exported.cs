@@ -64,16 +64,13 @@ public class CommandProcessorDepositObservabilityTests
         var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
         {
             {
-                routingKey, new InMemoryMessageProducer(new InternalBus(), new FakeTimeProvider(), InstrumentationOptions.All)
-                {
-                    Publication = { Topic = routingKey, RequestType = typeof(MyEvent)}
-                }
+                routingKey, new InMemoryMessageProducer(new InternalBus(), new FakeTimeProvider(), new Publication  { Topic = routingKey, RequestType = typeof(MyEvent)})
             }
         });
         
         IAmAnOutboxProducerMediator bus = new OutboxProducerMediator<Message, CommittableTransaction>(
             producerRegistry, 
-            policyRegistry, 
+            new ResiliencePipelineRegistry<string>().AddBrighterDefault(), 
             messageMapperRegistry, 
             new EmptyMessageTransformerFactory(), 
             new EmptyMessageTransformerFactoryAsync(),
@@ -88,6 +85,7 @@ public class CommandProcessorDepositObservabilityTests
             handlerFactory, 
             new InMemoryRequestContextFactory(),
             policyRegistry, 
+            new ResiliencePipelineRegistry<string>(),
             bus,
             new InMemorySchedulerFactory(),
             tracer: tracer, 

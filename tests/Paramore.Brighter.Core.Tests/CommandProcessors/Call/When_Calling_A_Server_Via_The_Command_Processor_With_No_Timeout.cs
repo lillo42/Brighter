@@ -5,7 +5,6 @@ using Microsoft.Extensions.Time.Testing;
 using Paramore.Brighter.Core.Tests.CommandProcessors.TestDoubles;
 using Paramore.Brighter.Core.Tests.TestHelpers;
 using Paramore.Brighter.Observability;
-using Polly;
 using Polly.Registry;
 using Xunit;
 
@@ -38,24 +37,13 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Call
             subscriberRegistry.Register<MyResponse, MyResponseHandler>();
             var handlerFactory = new SimpleHandlerFactorySync(_ => new MyResponseHandler());
 
-            var retryPolicy = Policy
-                .Handle<Exception>()
-                .Retry();
-
-            var circuitBreakerPolicy = Policy
-                .Handle<Exception>()
-                .CircuitBreaker(1, TimeSpan.FromMilliseconds(1));
-
             var replySubs = new List<Subscription>
             {
                 new Subscription<MyResponse>()
             };
             
-            var policyRegistry = new PolicyRegistry()
-            {
-                {CommandProcessor.RETRYPOLICY, retryPolicy},
-                {CommandProcessor.CIRCUITBREAKER, circuitBreakerPolicy}
-            };
+            var resiliencePipelineRegistry = new ResiliencePipelineRegistry<string>()
+                .AddBrighterDefault();
 
             const string topic = "MyRequest";
             var routingKey = new RoutingKey(topic);
@@ -64,24 +52,20 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Call
             var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
             {
                 { 
-                    routingKey, new InMemoryMessageProducer(new InternalBus(), fakeTimeProvider, InstrumentationOptions.All)
-                    {
-                        Publication = {Topic = routingKey, RequestType = typeof(MyRequest)}
-                    } 
+                    routingKey, new InMemoryMessageProducer(new InternalBus(), fakeTimeProvider,new Publication {Topic = routingKey, RequestType = typeof(MyRequest)})
                 }
             });
 
-            var timeProvider = fakeTimeProvider;
-            var tracer = new BrighterTracer(timeProvider);
+            var tracer = new BrighterTracer(fakeTimeProvider);
             IAmAnOutboxProducerMediator bus = new OutboxProducerMediator<Message, CommittableTransaction>(
                 producerRegistry, 
-                policyRegistry, 
+                resiliencePipelineRegistry, 
                 messageMapperRegistry,
                 new EmptyMessageTransformerFactory(),
                 new EmptyMessageTransformerFactoryAsync(),
                 tracer,
                 new FindPublicationByPublicationTopicOrRequestType(),
-                new InMemoryOutbox( timeProvider) {Tracer = tracer}
+                new InMemoryOutbox( fakeTimeProvider) {Tracer = tracer}
             );
 
             CommandProcessor.ClearServiceBus();
@@ -89,7 +73,8 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Call
                 subscriberRegistry,
                 handlerFactory,
                 new InMemoryRequestContextFactory(),
-                policyRegistry,
+                new DefaultPolicy(),
+                resiliencePipelineRegistry,
                 bus,
                 replySubscriptions:replySubs,
                 responseChannelFactory: new InMemoryChannelFactory(new InternalBus(), TimeProvider.System),
@@ -97,7 +82,6 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Call
             );
            
             PipelineBuilder<MyRequest>.ClearPipelineCache();
-
         }
 
 

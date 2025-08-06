@@ -8,6 +8,7 @@ using Paramore.Brighter.CircuitBreaker;
 using Paramore.Brighter.Core.Tests.CommandProcessors.TestDoubles;
 using Paramore.Brighter.JsonConverters;
 using Paramore.Brighter.Observability;
+using Polly.Registry;
 using Xunit;
 
 namespace Paramore.Brighter.Core.Tests.CommandProcessors.Post
@@ -29,10 +30,7 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Post
             var timeProvider = new FakeTimeProvider();
             var tracer = new BrighterTracer(timeProvider);
             _outbox = new InMemoryOutbox(timeProvider) {Tracer = tracer};
-            InMemoryMessageProducer messageProducer = new(_internalBus, timeProvider, InstrumentationOptions.All)
-            {
-                Publication = {Topic = _routingKey, RequestType = typeof(MyCommand)}
-            };
+            InMemoryMessageProducer messageProducer = new(_internalBus, timeProvider, new Publication { Topic = _routingKey, RequestType = typeof(MyCommand) });
 
             _message = new Message(
                 new MessageHeader(_myCommand.Id, _routingKey, MessageType.MT_COMMAND),
@@ -50,7 +48,7 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Post
 
             var externalBus = new OutboxProducerMediator<Message, CommittableTransaction>(
                 producerRegistry: producerRegistry,
-                policyRegistry: new DefaultPolicy(),
+                resiliencePipelineRegistry: new ResiliencePipelineRegistry<string>().AddBrighterDefault(),
                 mapperRegistry: messageMapperRegistry,
                 messageTransformerFactory: new EmptyMessageTransformerFactory(),
                 messageTransformerFactoryAsync: new EmptyMessageTransformerFactoryAsync(),
@@ -62,7 +60,7 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Post
             
             _commandProcessor = CommandProcessorBuilder.StartNew()
                 .Handlers(new HandlerConfiguration(new SubscriberRegistry(), new EmptyHandlerFactorySync()))
-                .DefaultPolicy()
+                .DefaultResilience()
                 .ExternalBus(ExternalBusType.FireAndForget, externalBus)
                 .ConfigureInstrumentation(new BrighterTracer(TimeProvider.System), InstrumentationOptions.All)
                 .RequestContextFactory(new InMemoryRequestContextFactory())
@@ -91,7 +89,7 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Post
         {
             public IHandleRequests Create(Type handlerType, IAmALifetime lifetime)
             {
-                return null;
+                return null!;
             }
 
             public void Release(IHandleRequests handler, IAmALifetime lifetime) {}

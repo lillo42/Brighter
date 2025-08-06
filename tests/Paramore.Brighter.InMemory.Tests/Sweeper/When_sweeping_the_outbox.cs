@@ -33,14 +33,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
             var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
             {
                 {
-                    routingKey, new InMemoryMessageProducer(internalBus, timeProvider, InstrumentationOptions.All)
-                    {
-                        Publication =
-                        {
-                            RequestType = typeof(MyEvent),
-                            Topic = routingKey
-                        }
-                    }
+                    routingKey, new InMemoryMessageProducer(internalBus, timeProvider, new Publication { RequestType = typeof(MyEvent), Topic = routingKey })
                 }
             });
 
@@ -53,7 +46,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
 
             var mediator = new OutboxProducerMediator<Message, CommittableTransaction>(
                 producerRegistry,
-                new DefaultPolicy(),
+                new ResiliencePipelineRegistry<string>().AddBrighterDefault(),
                 mapperRegistry,
                 new EmptyMessageTransformerFactory(),
                 new EmptyMessageTransformerFactoryAsync(),
@@ -67,6 +60,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
             var commandProcessor = new CommandProcessor(
                 new InMemoryRequestContextFactory(),
                 new PolicyRegistry(),
+                new ResiliencePipelineRegistry<string>(),
                 mediator,
                 new InMemorySchedulerFactory());
 
@@ -111,14 +105,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
             var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
             {
                 {
-                    routingKey, new InMemoryMessageProducer(internalBus, timeProvider, InstrumentationOptions.All)
-                    {
-                        Publication =
-                        {
-                            RequestType = typeof(MyEvent),
-                            Topic = routingKey
-                        }
-                    }
+                    routingKey, new InMemoryMessageProducer(internalBus, timeProvider, new Publication { RequestType = typeof(MyEvent), Topic = routingKey })
                 }
             });
 
@@ -131,7 +118,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
 
             var mediator = new OutboxProducerMediator<Message, CommittableTransaction>(
                 producerRegistry,
-                new DefaultPolicy(),
+                new ResiliencePipelineRegistry<string>().AddBrighterDefault(),
                 mapperRegistry,
                 new EmptyMessageTransformerFactory(),
                 new EmptyMessageTransformerFactoryAsync(),
@@ -145,6 +132,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
             var commandProcessor = new CommandProcessor(
                 new InMemoryRequestContextFactory(),
                 new PolicyRegistry(),
+                new ResiliencePipelineRegistry<string>(),
                 mediator,
                 new InMemorySchedulerFactory());
             
@@ -188,14 +176,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
             var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
             {
                 {
-                    routingKey, new InMemoryMessageProducer(internalBus, timeProvider, InstrumentationOptions.All)
-                    {
-                        Publication =
-                        {
-                            RequestType = typeof(MyEvent),
-                            Topic = routingKey
-                        }
-                    }
+                    routingKey, new InMemoryMessageProducer(internalBus, timeProvider, new Publication { RequestType = typeof(MyEvent), Topic = routingKey })
                 }
             });
 
@@ -208,7 +189,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
 
             var mediator = new OutboxProducerMediator<Message, CommittableTransaction>(
                 producerRegistry,
-                new DefaultPolicy(),
+                new ResiliencePipelineRegistry<string>().AddBrighterDefault(),
                 mapperRegistry,
                 new EmptyMessageTransformerFactory(),
                 new EmptyMessageTransformerFactoryAsync(),
@@ -222,6 +203,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
             var commandProcessor = new CommandProcessor(
                 new InMemoryRequestContextFactory(),
                 new PolicyRegistry(),
+                new ResiliencePipelineRegistry<string>(),
                 mediator,
                 new InMemorySchedulerFactory());
             
@@ -274,14 +256,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
             var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
             {
                 {
-                    routingKey, new InMemoryMessageProducer(internalBus, timeProvider, InstrumentationOptions.All)
-                    {
-                        Publication =
-                        {
-                            RequestType = typeof(MyEvent),
-                            Topic = routingKey
-                        }
-                    }
+                    routingKey, new InMemoryMessageProducer(internalBus, timeProvider, new Publication { RequestType = typeof(MyEvent), Topic = routingKey })
                 }
             });
 
@@ -294,7 +269,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
 
             var mediator = new OutboxProducerMediator<Message, CommittableTransaction>(
                 producerRegistry,
-                new DefaultPolicy(),
+                new ResiliencePipelineRegistry<string>().AddBrighterDefault(),
                 mapperRegistry,
                 new EmptyMessageTransformerFactory(),
                 new EmptyMessageTransformerFactoryAsync(),
@@ -308,6 +283,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
             var commandProcessor = new CommandProcessor(
                 new InMemoryRequestContextFactory(),
                 new PolicyRegistry(),
+                new ResiliencePipelineRegistry<string>(),
                 mediator,
                 new InMemorySchedulerFactory());           
             

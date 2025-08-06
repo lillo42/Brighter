@@ -64,16 +64,14 @@ public class CommandProcessorClearOutstandingObservabilityTests
 
         var routingKey = new RoutingKey(_topic);
         
-        InMemoryMessageProducer messageProducer = new(_internalBus, timeProvider, InstrumentationOptions.All)
-        {
-            Publication =
+        InMemoryMessageProducer messageProducer = new(_internalBus, timeProvider, 
+            new Publication 
             {
                 Source = new Uri("http://localhost"),
                 RequestType = typeof(MyEvent),
                 Topic = routingKey,
-                Type = nameof(MyEvent),
-            }
-        };
+                Type = new CloudEventsType("io.goparamore.brighter.myevent"),
+            });
 
         var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
         {
@@ -82,7 +80,7 @@ public class CommandProcessorClearOutstandingObservabilityTests
         
         _mediator = new OutboxProducerMediator<Message, CommittableTransaction>(
             producerRegistry, 
-            policyRegistry, 
+            new ResiliencePipelineRegistry<string>().AddBrighterDefault(), 
             messageMapperRegistry, 
             new EmptyMessageTransformerFactory(), 
             new EmptyMessageTransformerFactoryAsync(),
@@ -97,6 +95,7 @@ public class CommandProcessorClearOutstandingObservabilityTests
             handlerFactory, 
             new InMemoryRequestContextFactory(),
             policyRegistry, 
+            new ResiliencePipelineRegistry<string>(),
             _mediator,
             new InMemorySchedulerFactory(),
             tracer: tracer, 

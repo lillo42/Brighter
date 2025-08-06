@@ -22,13 +22,11 @@ THE SOFTWARE. */
 
 #endregion
 
-using System;
-
 namespace Paramore.Brighter.Core.Tests.JsonMapper.TestDoubles;
 
 public class MyRequest : IRequest
 {
     public Id? CorrelationId { get; set; }
     public string? Value { get; set; }
-    public Id Id { get; set; } = Id.Random;
+    public Id Id { get; set; } = Id.Random();
 }

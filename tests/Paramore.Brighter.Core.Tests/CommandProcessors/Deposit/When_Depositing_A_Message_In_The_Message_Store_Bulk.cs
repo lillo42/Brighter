@@ -7,7 +7,6 @@ using Microsoft.Extensions.Time.Testing;
 using Paramore.Brighter.Core.Tests.CommandProcessors.TestDoubles;
 using Paramore.Brighter.JsonConverters;
 using Paramore.Brighter.Observability;
-using Polly;
 using Polly.Registry;
 using Xunit;
 
@@ -32,21 +31,21 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Deposit
         public CommandProcessorBulkDepositPostTests()
         {
             _myCommand.Value = "Hello World";
+            _myCommandTwo.Value = "Hello World Two";
+            _myEvent.Data = 3;
 
             var timeProvider = new FakeTimeProvider();
-            InMemoryMessageProducer commandMessageProducer = new(_bus, timeProvider, InstrumentationOptions.All);
-            commandMessageProducer.Publication = new Publication 
+            InMemoryMessageProducer commandMessageProducer = new(_bus, timeProvider, new Publication 
             { 
                 Topic = new RoutingKey(_commandTopic), 
                 RequestType = typeof(MyCommand) 
-            };
+            });
 
-            InMemoryMessageProducer eventMessageProducer = new(_bus, timeProvider, InstrumentationOptions.All);
-            eventMessageProducer.Publication = new Publication 
+            InMemoryMessageProducer eventMessageProducer = new(_bus, timeProvider,  new Publication 
             { 
                 Topic = new RoutingKey(_eventTopic), 
                 RequestType = typeof(MyEvent) 
-            };
+            });
             
             _message = new Message(
                 new MessageHeader(_myCommand.Id, _commandTopic, MessageType.MT_COMMAND),
@@ -76,32 +75,21 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Deposit
             messageMapperRegistry.Register<MyCommand, MyCommandMessageMapper>();
             messageMapperRegistry.Register<MyEvent, MyEventMessageMapper>();
 
-            var retryPolicy = Policy
-                .Handle<Exception>()
-                .Retry();
-
-            var circuitBreakerPolicy = Policy
-                .Handle<Exception>()
-                .CircuitBreaker(1, TimeSpan.FromMilliseconds(1));
-            
             var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
             {
                 { _commandTopic, commandMessageProducer },
                 { _eventTopic, eventMessageProducer}
             });
-
-            var policyRegistry = new PolicyRegistry
-            {
-                { CommandProcessor.RETRYPOLICY, retryPolicy },
-                { CommandProcessor.CIRCUITBREAKER, circuitBreakerPolicy }
-            };
+            
+            var resiliencePipelineRegistry = new ResiliencePipelineRegistry<string>()
+                .AddBrighterDefault();
 
             var tracer = new BrighterTracer();
             _outbox = new InMemoryOutbox(timeProvider) {Tracer = tracer};
             
             IAmAnOutboxProducerMediator bus = new OutboxProducerMediator<Message, CommittableTransaction>(
                 producerRegistry, 
-                policyRegistry,
+                resiliencePipelineRegistry,
                 messageMapperRegistry,
                 new EmptyMessageTransformerFactory(),
                 new EmptyMessageTransformerFactoryAsync(),
@@ -113,7 +101,8 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Deposit
             CommandProcessor.ClearServiceBus();
             _commandProcessor = new CommandProcessor(
                 new InMemoryRequestContextFactory(),
-                policyRegistry,
+                new DefaultPolicy(),
+                resiliencePipelineRegistry,
                 bus,
                 new InMemorySchedulerFactory()
             );
@@ -131,8 +120,8 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Deposit
             //assert
             
             //message should not be posted
-            Assert.False(_bus.Stream(new RoutingKey(_commandTopic)).Any());
-            Assert.False(_bus.Stream(new RoutingKey(_eventTopic)).Any());
+            Assert.False(_bus.Stream(_commandTopic).Any());
+            Assert.False(_bus.Stream(_eventTopic).Any());
 
             //message should correspond to the command
             var depositedPost = _outbox.Get(_message.Id, context);
@@ -151,6 +140,7 @@ namespace Paramore.Brighter.Core.Tests.CommandProcessors.Deposit
                 .OutstandingMessages(TimeSpan.Zero, context)
                 .SingleOrDefault(msg => msg.Id == _messageThree.Id);
             //message should correspond to the command
+            Assert.NotNull(depositedPost3);
             Assert.Equal(_messageThree.Id, depositedPost3.Id);
             Assert.Equal(_messageThree.Body.Value, depositedPost3.Body.Value);
             Assert.Equal(_messageThree.Header.Topic, depositedPost3.Header.Topic);

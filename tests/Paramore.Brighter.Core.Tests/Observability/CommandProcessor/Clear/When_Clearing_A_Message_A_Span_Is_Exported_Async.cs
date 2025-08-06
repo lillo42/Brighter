@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text.Json;
 using System.Threading.Tasks;
 using System.Transactions;
 using Microsoft.Extensions.Time.Testing;
@@ -60,25 +59,24 @@ public class AsyncCommandProcessorClearObservabilityTests
             new SimpleMessageMapperFactoryAsync((_) => new MyEventMessageMapperAsync()));
         messageMapperRegistry.RegisterAsync<MyEvent, MyEventMessageMapperAsync>();
 
-        _messageProducer = new InMemoryMessageProducer(_internalBus, timeProvider, InstrumentationOptions.All)
-        {
-            Publication =
+        var type = new CloudEventsType("io.goparamore.brighter.myevent");
+        _messageProducer = new InMemoryMessageProducer(_internalBus, timeProvider,
+            new Publication
             {
                 Source = new Uri("http://localhost"),
                 RequestType = typeof(MyEvent),
                 Topic = _topic,
-                Type = nameof(MyEvent),
-            }
-        };
+                Type = type,
+            });
 
-        var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
+        var producerRegistry = new ProducerRegistry(new Dictionary<ProducerKey, IAmAMessageProducer>
         {
-            {_topic, _messageProducer}
+            {new ProducerKey(_topic, type), _messageProducer}
         });
         
         IAmAnOutboxProducerMediator bus = new OutboxProducerMediator<Message, CommittableTransaction>(
             producerRegistry, 
-            policyRegistry, 
+            new ResiliencePipelineRegistry<string>().AddBrighterDefault(), 
             messageMapperRegistry, 
             new EmptyMessageTransformerFactory(), 
             new EmptyMessageTransformerFactoryAsync(),
@@ -93,6 +91,7 @@ public class AsyncCommandProcessorClearObservabilityTests
             handlerFactory, 
             new InMemoryRequestContextFactory(),
             policyRegistry, 
+            new ResiliencePipelineRegistry<string>(),
             bus,
             new InMemorySchedulerFactory(),
             tracer: tracer, 

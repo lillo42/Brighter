@@ -61,10 +61,7 @@ public class InMemorySchedulerRequestAsyncTests
 
         var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
         {
-            [_routingKey] = new InMemoryMessageProducer(_internalBus, _timeProvider, InstrumentationOptions.All)
-            {
-                Publication = { Topic = _routingKey, RequestType = typeof(MyEvent) }
-            }
+            [_routingKey] = new InMemoryMessageProducer(_internalBus, _timeProvider, new Publication{ Topic = _routingKey, RequestType = typeof(MyEvent) })
         });
 
         var messageMapperRegistry = new MessageMapperRegistry(
@@ -78,7 +75,7 @@ public class InMemorySchedulerRequestAsyncTests
 
         var outboxBus = new OutboxProducerMediator<Message, CommittableTransaction>(
             producerRegistry,
-            policyRegistry,
+            new ResiliencePipelineRegistry<string>().AddBrighterDefault(),
             messageMapperRegistry,
             new EmptyMessageTransformerFactory(),
             new EmptyMessageTransformerFactoryAsync(),
@@ -93,6 +90,7 @@ public class InMemorySchedulerRequestAsyncTests
             handlerFactory,
             new InMemoryRequestContextFactory(),
             policyRegistry,
+            new ResiliencePipelineRegistry<string>(),
             outboxBus,
             _scheduler
         );
@@ -108,7 +106,7 @@ public class InMemorySchedulerRequestAsyncTests
         var id = await scheduler.ScheduleAsync(req, RequestSchedulerType.Send,
             _timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(1)));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
 
         Assert.DoesNotContain(nameof(MyEventHandlerAsync), _receivedMessages);
 
@@ -140,7 +138,7 @@ public class InMemorySchedulerRequestAsyncTests
         var scheduler = _scheduler.CreateAsync(_processor);
         var id = await scheduler.ScheduleAsync(req, RequestSchedulerType.Send, TimeSpan.FromSeconds(1));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
 
         Assert.DoesNotContain(nameof(MyEventHandlerAsync), _receivedMessages);
 
@@ -173,7 +171,7 @@ public class InMemorySchedulerRequestAsyncTests
         var id = await scheduler.ScheduleAsync(req, RequestSchedulerType.Publish,
             _timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(1)));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
 
         Assert.DoesNotContain(nameof(MyEventHandlerAsync), _receivedMessages);
 
@@ -205,7 +203,7 @@ public class InMemorySchedulerRequestAsyncTests
         var scheduler = _scheduler.CreateAsync(_processor);
         var id = await scheduler.ScheduleAsync(req, RequestSchedulerType.Publish, TimeSpan.FromSeconds(1));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
 
         Assert.DoesNotContain(nameof(MyEventHandlerAsync), _receivedMessages);
 
@@ -238,7 +236,7 @@ public class InMemorySchedulerRequestAsyncTests
         var id = await scheduler.ScheduleAsync(req, RequestSchedulerType.Post,
             _timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(1)));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
 
         Assert.Empty(_internalBus.Stream(_routingKey));
 
@@ -256,7 +254,7 @@ public class InMemorySchedulerRequestAsyncTests
         var scheduler = _scheduler.CreateAsync(_processor);
         var id = await scheduler.ScheduleAsync(req, RequestSchedulerType.Post, TimeSpan.FromSeconds(1));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
 
         Assert.Empty(_internalBus.Stream(_routingKey));
 
@@ -280,7 +278,7 @@ public class InMemorySchedulerRequestAsyncTests
         var scheduler = _scheduler.CreateAsync(_processor);
         var id = await scheduler.ScheduleAsync(req, type, _timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(1)));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
 
         await scheduler.ReSchedulerAsync(id, _timeProvider.GetUtcNow().Add(TimeSpan.FromHours(1)));
 
@@ -318,7 +316,7 @@ public class InMemorySchedulerRequestAsyncTests
         var scheduler = _scheduler.CreateAsync(_processor);
         var id = await scheduler.ScheduleAsync(req, type, TimeSpan.FromHours(1));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
         Assert.DoesNotContain(nameof(MyEventHandlerAsync), _receivedMessages);
 
         await scheduler.ReSchedulerAsync(id, TimeSpan.FromHours(1));
@@ -361,7 +359,7 @@ public class InMemorySchedulerRequestAsyncTests
         var id = await scheduler.ScheduleAsync(req, type,
             _timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(1)));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
 
         Assert.DoesNotContain(nameof(MyEventHandlerAsync), _receivedMessages);
 
@@ -398,7 +396,7 @@ public class InMemorySchedulerRequestAsyncTests
         var scheduler = _scheduler.CreateAsync(_processor);
         var id = await scheduler.ScheduleAsync(req, type, TimeSpan.FromHours(1));
 
-        Assert.True(id.Any());
+        Assert.NotEqual(0, id.Length);
         Assert.DoesNotContain(nameof(MyEventHandlerAsync), _receivedMessages);
 
         await scheduler.CancelAsync(id);

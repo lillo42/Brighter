@@ -29,7 +29,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
         private readonly InMemoryOutbox _outbox;
         private readonly InternalBus _internalBus = new ();
         private readonly IAmAnOutboxProducerMediator _mediator;
-        private readonly OutboxSweeper _sweeper;
+        private OutboxSweeper _sweeper;
         private readonly IAmAnOutboxCircuitBreaker _circuitBreaker;
         private readonly FakeTimeProvider _timeProvider = new();
         private readonly TimeSpan _timeSinceSent = TimeSpan.FromMilliseconds(6000);
@@ -60,10 +60,8 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
 
             // message 1
             var myEvent = new MyEvent() { Value = "MyEvent1" };
-            InMemoryMessageProducer messageProducer = new(_internalBus, _timeProvider, InstrumentationOptions.All)
-            {
-                Publication = { Topic = _routingKeyOne, RequestType = typeof(MyEvent) }
-            };
+            InMemoryMessageProducer messageProducer = new(_internalBus, _timeProvider, new Publication { Topic = _routingKeyOne, RequestType = typeof(MyEvent) });
+            
             _messageOne = new Message(
                 new MessageHeader(myEvent.Id, _routingKeyOne, MessageType.MT_EVENT),
                 new MessageBody(JsonSerializer.Serialize(myEvent, JsonSerialisationOptions.Options))
@@ -71,10 +69,8 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
 
             // message 2
             var myEvent2 = new MyEvent() { Value = "MyEvent2" };
-            InMemoryMessageProducer messageProducerTwo = new(_internalBus, _timeProvider, InstrumentationOptions.All)
-            {
-                Publication = { Topic = _routingKeyTwo, RequestType = typeof(MyEvent) }
-            };
+            InMemoryMessageProducer messageProducerTwo = new(_internalBus, _timeProvider, new Publication { Topic = _routingKeyTwo, RequestType = typeof(MyEvent) });
+            
             _messageTwo = new Message(
                 new MessageHeader(myEvent2.Id, _routingKeyTwo, MessageType.MT_COMMAND),
                 new MessageBody(JsonSerializer.Serialize(myEvent2, JsonSerialisationOptions.Options))
@@ -85,20 +81,6 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
                 null);
             messageMapperRegistry.Register<MyEvent, MyEventMessageMapper>();
 
-
-            var policyRegistry = new PolicyRegistry
-            {
-                {
-                    CommandProcessor.RETRYPOLICYASYNC, Policy
-                        .Handle<Exception>()
-                        .RetryAsync()
-                },
-                {
-                    CommandProcessor.CIRCUITBREAKERASYNC, Policy
-                        .Handle<Exception>()
-                        .CircuitBreakerAsync(1, TimeSpan.FromMilliseconds(1))
-                }
-            };
 
             var producerRegistry = new ProducerRegistry(new Dictionary<RoutingKey, IAmAMessageProducer>
             {
@@ -115,7 +97,7 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
 
             _mediator = new OutboxProducerMediator<Message, CommittableTransaction>(
                 producerRegistry,
-                policyRegistry,
+                new ResiliencePipelineRegistry<string>().AddBrighterDefault(),
                 messageMapperRegistry,
                 new EmptyMessageTransformerFactory(),
                 new EmptyMessageTransformerFactoryAsync(),
@@ -126,15 +108,16 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
             );
 
             CommandProcessor.ClearServiceBus();
-
-            _sweeper = new OutboxSweeper(_timeSinceSent, _mediator, new InMemoryRequestContextFactory(), batchSize: 2);
         }
 
 
-        [Fact]
-        public async Task When_outstanding_in_outbox_with_trippedTopic_sweep_clears_them_async()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task When_outstanding_in_outbox_with_trippedTopic_sweep_clears_them_async(bool useBulk)
         {
             // Arrange
+            _sweeper = new OutboxSweeper(_timeSinceSent, _mediator, new InMemoryRequestContextFactory(), batchSize: 2, useBulk: useBulk);
             var context = new RequestContext();
             await _outbox.AddAsync(_messageOne, context);
             await _outbox.AddAsync(_messageTwo, context);
@@ -164,10 +147,13 @@ namespace Paramore.Brighter.InMemory.Tests.Sweeper
             Assert.Equal(_messageTwo.Body.Value, sentMessage2.Body.Value);
         }
 
-        [Fact]
-        public async Task When_outstanding_in_outbox_and_one_topic_trips_Then_nonTripped_are_cleared_on_second_sweep()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task When_outstanding_in_outbox_and_one_topic_trips_Then_nonTripped_are_cleared_on_second_sweep(bool useBulk)
         {
             // Arrange
+            _sweeper = new OutboxSweeper(_timeSinceSent, _mediator, new InMemoryRequestContextFactory(), batchSize: 2, useBulk: useBulk);
             var context = new RequestContext();
             await _outbox.AddAsync(_failingMessage, context);
             await _outbox.AddAsync(_failingMessageTwo, context);
