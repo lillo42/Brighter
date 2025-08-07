@@ -1,17 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 using Oracle.ManagedDataAccess.Client;
-using Paramore.Brighter.Oracle;
 
 namespace Paramore.Brighter.MessagingGateway.Oracle;
 
 public class OracleAdvanceQueueMessageProducerFactory(OraclesMessagingGatewayConnection connection, IEnumerable<OracleAdvanceQueuePublication> publications) : IAmAMessageProducerFactory
 {
     /// <inheritdoc />
-    public Dictionary<RoutingKey, IAmAMessageProducer> Create()
+    public Dictionary<ProducerKey, IAmAMessageProducer> Create()
     {
-        var producers = new Dictionary<RoutingKey, IAmAMessageProducer>();
+        var producers = new Dictionary<ProducerKey, IAmAMessageProducer>();
         foreach (var publication in publications)
         {
             if (RoutingKey.IsNullOrEmpty(publication.Topic))
@@ -24,52 +22,22 @@ public class OracleAdvanceQueueMessageProducerFactory(OraclesMessagingGatewayCon
                 throw new ConfigurationException("A Oracle AQ publication must have a queue");
             }
 
-            publication.Sender ??= connection.Sender;
-            EnsureQueueExists(publication);
+            publication.Sender ??= connection.DefaultSender;
+            QueueFactory.EnsureExists(connection.Configuration.ConnectionString, 
+                publication.MakeChannels, 
+                GetOrCreateQueueAttribute(publication));
             
-            producers[publication.Topic] = new OracleAdvanceQueueMessageProducer(
-                new OracleConnectionProvider(connection.Configuration),
-                publication);
+            producers[new ProducerKey(publication.Topic, publication.Type)] = new OracleAdvanceQueueMessageProducer(
+                connection.Configuration.ConnectionString, publication);
         }
         
         return producers;
-    }
-    
-    private void EnsureQueueExists(OracleAdvanceQueuePublication publication)
-    {
-        if (publication.MakeChannels == OnMissingChannel.Assume)
-        {
-            return;
-        }
-
-        bool exists = false;
-        using var conn = new OracleConnection(connection.Configuration.ConnectionString);
-        conn.Open();
-        using (var cmd = conn.CreateCommand())
-        {
-            cmd.CommandText = "SELECT COUNT(*) FROM USER_QUEUES WHERE NAME = :p_queue_name";
-            cmd.Parameters.Add(new OracleParameter("p_queue_name", publication.Queue));
-        
-            var res = cmd.ExecuteScalar();
-            exists = res is > 0;
-        }
-        
-        if (publication.MakeChannels == OnMissingChannel.Validate)
-        {
-            if (exists)
-            {
-                return;
-            }
-
-            throw new InvalidOperationException($"'{publication.Queue}' doesn't exist");
-        }
-        
     }
     
     /// <inheritdoc />
-    public async Task<Dictionary<RoutingKey, IAmAMessageProducer>> CreateAsync()
+    public async Task<Dictionary<ProducerKey, IAmAMessageProducer>> CreateAsync()
     {
-        var producers = new Dictionary<RoutingKey, IAmAMessageProducer>();
+        var producers = new Dictionary<ProducerKey, IAmAMessageProducer>();
         foreach (var publication in publications)
         {
             if (RoutingKey.IsNullOrEmpty(publication.Topic))
@@ -82,51 +50,52 @@ public class OracleAdvanceQueueMessageProducerFactory(OraclesMessagingGatewayCon
                 throw new ConfigurationException("A Oracle AQ publication must have a queue");
             }
 
-            publication.Sender ??= connection.Sender;
-            await EnsureQueueExistsAsync(publication);
+            publication.Sender ??= connection.DefaultSender;
+            await QueueFactory.EnsureExistsAsync(connection.Configuration.ConnectionString, 
+                publication.MakeChannels, 
+                GetOrCreateQueueAttribute(publication));
             
-            producers[publication.Topic] = new OracleAdvanceQueueMessageProducer(
-                new OracleConnectionProvider(connection.Configuration),
+            producers[new ProducerKey(publication.Topic, publication.Type)] = new OracleAdvanceQueueMessageProducer(
+                connection.Configuration.ConnectionString,
                 publication);
         }
         
         return producers;
     }
 
-    private async Task EnsureQueueExistsAsync(OracleAdvanceQueuePublication publication)
+    private static QueueAttribute GetOrCreateQueueAttribute(OracleAdvanceQueuePublication publication)
     {
-        if (publication.MakeChannels == OnMissingChannel.Assume)
+        var attribute = publication.Attribute ?? new QueueAttribute();
+        if (string.IsNullOrEmpty(attribute.Queue.Name))
         {
-            return;
+            attribute.Queue.Name = publication.Queue;
         }
 
-#if NETFRAMEWORK
-        using var conn = new OracleConnection(connection.Configuration.ConnectionString);
-#else
-        await using var conn = new OracleConnection(connection.Configuration.ConnectionString);
-#endif
-        await conn.OpenAsync();
-        
-#if NETFRAMEWORK
-        using var cmd = conn.CreateCommand();
-#else
-        await using var cmd = conn.CreateCommand();
-#endif
-        cmd.CommandText = "SELECT COUNT(*) FROM USER_QUEUES WHERE NAME = :p_queue_name";
-        cmd.Parameters.Add(new OracleParameter("p_queue_name", publication.Queue));
-        
-        var res = await cmd.ExecuteScalarAsync();
-        var exists = res is > 0;
-        if (publication.MakeChannels == OnMissingChannel.Validate)
+        if (string.IsNullOrEmpty(attribute.Table.Name))
         {
-            if (exists)
+            attribute.Table.Name = attribute.Queue.Name + "_TABLE";
+        }
+        
+        if (string.IsNullOrEmpty(attribute.Queue.Table))
+        {
+            attribute.Queue.Table = attribute.Table.Name;
+        }
+
+        if (string.IsNullOrEmpty(attribute.Table.PayloadType))
+        {
+            attribute.Table.PayloadType = publication.MessageType switch
             {
-                return;
-            }
-
-            throw new InvalidOperationException($"'{publication.Queue}' doesn't exist");
+                OracleAQMessageType.Udt when !string.IsNullOrEmpty(publication.UdtTypeName) => publication.UdtTypeName!,
+                OracleAQMessageType.Udt => throw new ConfigurationException("A Oracle AQ publication must have a UdtTypeName"),
+                _ => publication.MessageType.ToString().ToUpper()
+            };
         }
-        
-        
-    }   
+
+        if (attribute.Queue.ExceptionQueue is { Queue.QueueType: null })
+        {
+            attribute.Queue.ExceptionQueue.Queue.QueueType = "DBMS_AQADM.EXCEPTION_QUEUE";
+        }
+
+        return attribute;
+    }
 }

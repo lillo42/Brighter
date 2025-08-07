@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Text;
-using Oracle.ManagedDataAccess.Client;
 
 namespace Paramore.Brighter.MessagingGateway.Oracle;
 

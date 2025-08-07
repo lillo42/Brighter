@@ -29,10 +29,9 @@ namespace Paramore.Brighter.MessagingGateway.Oracle;
 /// </list>
 /// </para>
 /// </remarks>
-/// <param name="connectionProvider">Provider for Oracle database connections</param>
+/// <param name="connectionString">The connection string</param>
 /// <param name="publication">Configuration for message publication parameters</param>
-public class OracleAdvanceQueueMessageProducer(IAmARelationalDbConnectionProvider connectionProvider,
-    OracleAdvanceQueuePublication publication) : IAmAMessageProducerSync, IAmAMessageProducerAsync
+public class OracleAdvanceQueueMessageProducer(string connectionString, OracleAdvanceQueuePublication publication) : IAmAMessageProducerSync, IAmAMessageProducerAsync
 {
     /// <inheritdoc />
     public Publication Publication => publication;
@@ -49,9 +48,13 @@ public class OracleAdvanceQueueMessageProducer(IAmARelationalDbConnectionProvide
     /// <inheritdoc />
     public void SendWithDelay(Message message, TimeSpan? delay)
     {
-        using var conn = (OracleConnection)connectionProvider.GetConnection();
+        using var conn = new OracleConnection(connectionString);
+        conn.Open();
+        
+        using var transaction = conn.BeginTransaction();
         using var queue = CreateQueue(conn);
         queue.Enqueue(CreateOracleMessage(message, delay ?? TimeSpan.Zero));
+        transaction.Commit();
     }
     
     /// <inheritdoc />
@@ -62,19 +65,31 @@ public class OracleAdvanceQueueMessageProducer(IAmARelationalDbConnectionProvide
     public async Task SendWithDelayAsync(Message message, TimeSpan? delay, CancellationToken cancellationToken = default)
     {
 #if NETFRAMEWORK
-        using var conn = (OracleConnection)await connectionProvider.GetConnectionAsync(cancellationToken);
+        using var conn = new OracleConnection(connectionString);
+        await conn.OpenAsync(cancellationToken);
+        using var transaction = conn.BeginTransaction();
 #else
-        await using var conn = (OracleConnection)await connectionProvider.GetConnectionAsync(cancellationToken);
+        await using var conn = new OracleConnection(connectionString);
+        await conn.OpenAsync(cancellationToken);
+        
+        await using var transaction = conn.BeginTransaction();
 #endif
+        
         using var queue = CreateQueue(conn);
         queue.Enqueue(CreateOracleMessage(message, delay ?? TimeSpan.Zero));
+        
+#if NETFRAMEWORK
+        transaction.Commit();
+#else
+        await transaction.CommitAsync(cancellationToken);
+#endif
     }
 
     private OracleAQQueue CreateQueue(OracleConnection connection)
     {
         return new OracleAQQueue(publication.Queue, connection)
         {
-            MessageType = publication.MessageType, 
+            MessageType = publication.MessageType,
             UdtTypeName = publication.UdtTypeName,
             EnqueueOptions = new OracleAQEnqueueOptions
             {
@@ -86,9 +101,15 @@ public class OracleAdvanceQueueMessageProducer(IAmARelationalDbConnectionProvide
 
     private OracleAQMessage CreateOracleMessage(Message message, TimeSpan delay)
     {
+        string? correlation = null;
+        if (message.Header.PartitionKey != PartitionKey.Empty)
+        {
+            correlation = message.Header.PartitionKey.Value;
+        }
+        
         return new OracleAQMessage
         {
-            Correlation = message.Header.CorrelationId,
+            Correlation = correlation,
             Delay = (int)delay.TotalSeconds,
             Expiration = GetExpiration(message),
             Priority = GetPriority(message),
@@ -139,6 +160,4 @@ public class OracleAdvanceQueueMessageProducer(IAmARelationalDbConnectionProvide
         Span?.Dispose();
         return new ValueTask();
     }
-
-    
 }

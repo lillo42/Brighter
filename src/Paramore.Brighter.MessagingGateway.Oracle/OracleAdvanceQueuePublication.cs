@@ -62,7 +62,7 @@ public class OracleAdvanceQueuePublication : Publication
     /// Controls when messages become visible to consumers
     /// </summary>
     /// <value>
-    /// Default: OracleAQVisibilityMode.Immediate
+    /// Default: OracleAQVisibilityMode.OnCommit
     /// </value>
     /// <remarks>
     /// <para>
@@ -72,7 +72,7 @@ public class OracleAdvanceQueuePublication : Publication
     /// OnCommit: Visible only after transaction commit (recommended for reliability)
     /// </para>
     /// </remarks>
-    public OracleAQVisibilityMode VisibilityMode { get; set; } = OracleAQVisibilityMode.Immediate;
+    public OracleAQVisibilityMode VisibilityMode { get; set; } = OracleAQVisibilityMode.OnCommit;
     
     /// <summary>
     /// Oracle UDT (User-Defined Type) name for structured payloads
@@ -114,6 +114,8 @@ public class OracleAdvanceQueuePublication : Publication
     /// Appears as SENDER_NAME and SENDER_ADDRESS in queue tables.
     /// </remarks>
     public OracleAQAgent? Sender { get; set; }
+    
+    public QueueAttribute? Attribute { get; set; }
 }
 
 
