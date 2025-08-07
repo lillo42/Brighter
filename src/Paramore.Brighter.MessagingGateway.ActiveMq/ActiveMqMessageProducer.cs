@@ -6,10 +6,8 @@ using Apache.NMS;
 
 namespace Paramore.Brighter.MessagingGateway.ActiveMq;
 
-public class ActiveMqMessageProducer(IConnection connection, 
-    ActiveMqPublication publication,
-    IDestination destination,
-    TimeProvider timeProvider) : IAmAMessageProducerSync, IAmAMessageProducerAsync
+public class ActiveMqMessageProducer(IConnection connection, ActiveMqPublication publication, TimeProvider timeProvider) 
+    : IAmAMessageProducerSync, IAmAMessageProducerAsync
 {
     /// <inheritdoc />
     public Publication Publication => publication;
@@ -27,6 +25,7 @@ public class ActiveMqMessageProducer(IConnection connection,
     public void SendWithDelay(Message message, TimeSpan? delay)
     {
         using var session = connection.CreateSession();
+        using var destination = GetDestination(session);
         using var producer = session.CreateProducer(destination);
         
         var activeMqMessage = session.CreateBytesMessage(message.Body.Bytes);
@@ -34,6 +33,13 @@ public class ActiveMqMessageProducer(IConnection connection,
         
         producer.Send(activeMqMessage, publication.DeliveryMode, publication.Priority, publication.TimeToLive);
     }
+    
+    private IDestination GetDestination(ISession session) => publication switch
+    {
+        ActiveMqQueuePublication => session.GetQueue(publication.Topic!.Value),
+        ActiveMqTopicPublication => session.GetTopic(publication.Topic!.Value),
+        _ => throw new InvalidOperationException("Invalid publication")
+    };
     
     /// <inheritdoc />
     public Task SendAsync(Message message, CancellationToken cancellationToken = default) 
@@ -43,6 +49,7 @@ public class ActiveMqMessageProducer(IConnection connection,
     public async Task SendWithDelayAsync(Message message, TimeSpan? delay, CancellationToken cancellationToken = default)
     {
         using var session = await connection.CreateSessionAsync();
+        using var destination = await GetDestinationAsync(session);
         using var producer = await session.CreateProducerAsync(destination);
         
         var activeMqMessage = await session.CreateBytesMessageAsync(message.Body.Bytes);
@@ -50,6 +57,13 @@ public class ActiveMqMessageProducer(IConnection connection,
         
         await producer.SendAsync(activeMqMessage, publication.DeliveryMode, publication.Priority, publication.TimeToLive);
     }
+    
+    private async Task<IDestination> GetDestinationAsync(ISession session) => publication switch
+    {
+        ActiveMqQueuePublication => await session.GetQueueAsync(publication.Topic!.Value),
+        ActiveMqTopicPublication => await session.GetTopicAsync(publication.Topic!.Value),
+        _ => throw new InvalidOperationException("Invalid publication")
+    };
 
     private void AddProperties(IMessage activeMessage, Message message, TimeSpan delay)
     {
