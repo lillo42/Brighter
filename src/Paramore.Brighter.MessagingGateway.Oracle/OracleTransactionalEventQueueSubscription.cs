@@ -4,7 +4,7 @@ using Oracle.ManagedDataAccess.Client;
 
 namespace Paramore.Brighter.MessagingGateway.Oracle;
 
-public class OracleAdvanceQueueSubscription(
+public class OracleTransactionalEventQueueSubscription(
     SubscriptionName subscriptionName,
     ChannelName channelName,
     RoutingKey routingKey,
@@ -33,27 +33,12 @@ public class OracleAdvanceQueueSubscription(
     OracleAQMessageType messageType = OracleAQMessageType.Raw,
     Encoding? encoding = null,
     QueueAttribute? attribute = null)
-    : Subscription(subscriptionName, channelName, routingKey, requestType, getRequestType, bufferSize, noOfPerformers,
-        timeOut, requeueCount,
-        requeueDelay, unacceptableMessageLimit, messagePumpType, channelFactory, makeChannels, emptyChannelDelay,
-        channelFailureDelay)
-{
-    public string? ConsumerName { get; } = consumerName;
-    public string? Correlation { get; } = correlation;
-    public OracleAQMessageDeliveryMode DeliveryMode { get; } = deliveryMode;
-    public OracleAQDequeueMode  DequeueMode { get; } = dequeueMode;
-    public int MessageIdLength { get; } = messageIdLength;
-    public OracleAQNavigationMode NavigationMode { get; } = navigationMode;
-    public bool ProviderSpecificType { get; } = providerSpecificType;
-    public OracleAQVisibilityMode  Visibility { get; } = visibility;
+    : OracleAdvanceQueueSubscription(subscriptionName, channelName, routingKey, requestType, getRequestType, bufferSize,
+        noOfPerformers, timeOut, requeueCount, requeueDelay, unacceptableMessageLimit, messagePumpType, channelFactory,
+        makeChannels, emptyChannelDelay, channelFailureDelay, consumerName, correlation, deliveryMode, messageIdLength,
+        dequeueMode, navigationMode, providerSpecificType, visibility, udtTypeName, messageType, encoding, attribute);
 
-    public string? UdtTypeName { get; } = udtTypeName;
-    public OracleAQMessageType MessageType { get; } = messageType;
-    public Encoding? Encoding { get; } = encoding;
-    public QueueAttribute? Attribute { get; } = attribute;
-}
-
-public class OracleAdvanceQueueSubscription<TRequest>(
+public class OracleTransactionalEventQueueSubscription<TRequest>(
     SubscriptionName subscriptionName,
     ChannelName channelName,
     RoutingKey routingKey,
@@ -81,9 +66,9 @@ public class OracleAdvanceQueueSubscription<TRequest>(
     OracleAQMessageType messageType = OracleAQMessageType.Raw,
     Encoding? encoding = null,
     QueueAttribute? attribute = null)
-    : OracleAdvanceQueueSubscription(subscriptionName, channelName, routingKey, typeof(TRequest), getRequestType,
-        bufferSize, noOfPerformers, timeOut, requeueCount, requeueDelay, unacceptableMessageLimit,
-        messagePumpType, channelFactory, makeChannels, emptyChannelDelay, channelFailureDelay,
-        consumerName, correlation, deliveryMode, messageIdLength, dequeueMode, navigationMode, providerSpecificType,
-        visibility, udtTypeName, messageType, encoding, attribute)
+    : OracleTransactionalEventQueueSubscription(subscriptionName, channelName, routingKey, typeof(TRequest),
+        getRequestType, bufferSize, noOfPerformers, timeOut, requeueCount, requeueDelay, unacceptableMessageLimit, 
+        messagePumpType, channelFactory, makeChannels, emptyChannelDelay, channelFailureDelay, consumerName, correlation, 
+        deliveryMode, messageIdLength, dequeueMode, navigationMode, providerSpecificType, visibility, udtTypeName,
+        messageType, encoding, attribute)
     where TRequest : class, IRequest;

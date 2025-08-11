@@ -1,0 +1,17 @@
+services:
+  oracle:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: oracle-db
+    environment:
+      - ORACLE_PASSWORD=MyPassword123
+      - ORACLE_DATABASE=BRIGHTER_DATABASE
+      - APP_USER=brighter
+      - APP_USER_PASSWORD=MyPassword123
+    ports:
+      - "1521:1521"  # Database listener
+      - "8080:8080"  # APEX/ORDS web interface
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 1m
+      timeout: 10s
+      retries: 5

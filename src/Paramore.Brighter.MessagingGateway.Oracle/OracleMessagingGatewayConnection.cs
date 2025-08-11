@@ -3,9 +3,9 @@ using Oracle.ManagedDataAccess.Client;
 
 namespace Paramore.Brighter.MessagingGateway.Oracle;
 
-public class OraclesMessagingGatewayConnection(IAmARelationalDatabaseConfiguration configuration) : IAmGatewayConfiguration
+public class OracleMessagingGatewayConnection(IAmARelationalDatabaseConfiguration configuration) : IAmGatewayConfiguration
 {
-    public OraclesMessagingGatewayConnection(string connectionString)
+    public OracleMessagingGatewayConnection(string connectionString)
         : this(new RelationalDatabaseConfiguration(connectionString))
     {
         

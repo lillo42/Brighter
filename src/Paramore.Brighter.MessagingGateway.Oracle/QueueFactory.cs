@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Data;
 using System.Text;
 using System.Threading.Tasks;
 using Oracle.ManagedDataAccess.Client;
@@ -9,8 +10,7 @@ internal static class QueueFactory
 {
     public static void EnsureExists(string connectionString, 
         OnMissingChannel makeChannel, 
-        QueueAttribute attribute,
-        bool startQueue = true)
+        QueueAttribute attribute)
     {
         if (makeChannel == OnMissingChannel.Assume)
         {
@@ -20,89 +20,156 @@ internal static class QueueFactory
         using var conn = new OracleConnection(connectionString);
         conn.Open();
         
-        var exists = Exist(conn, attribute.Queue.Name);
-        if (makeChannel == OnMissingChannel.Validate && exists)
-        {
-            return;
-        }
-
-        if (makeChannel == OnMissingChannel.Validate && !exists)
-        {
-            throw new InvalidOperationException($"'{attribute.Queue.Name}' doesn't exist");
-        }
-
-        if (exists && !attribute.OverrideIfNotExists)
-        {
-            return;
-        }
-
+        var exists = Exists(conn, attribute.Queue.Name);
         if (exists)
-        {
-            if (attribute.Queue.ExceptionQueue != null)
-            {
-                Execute(conn, $"DBMS_AQADM.STOP_QUEUE(queue_name => '{attribute.Queue.ExceptionQueue.Queue.Name}')");
-            }
-            
-            Execute(conn, $"DBMS_AQADM.STOP_QUEUE(queue_name => '{attribute.Queue.Name}')");
-            
-            if (attribute.Queue.ExceptionQueue != null)
-            {
-                EnsureExists(connectionString, makeChannel, attribute.Queue.ExceptionQueue, false);
-            }
-            
-            Execute(conn, ChangeQueueTableQuery(attribute.Table));
-            Execute(conn, ChangeQueueQuery(attribute.Queue));
-            
-            if (!string.IsNullOrEmpty(attribute.Table.PayloadTypeCreateOrUpdateQuery))
-            {
-                Execute(conn, attribute.Table.PayloadTypeCreateOrUpdateQuery!);
-            }
-        }
-        else
-        {
-            if (!string.IsNullOrEmpty(attribute.Table.PayloadTypeCreateOrUpdateQuery))
-            {
-                Execute(conn, attribute.Table.PayloadTypeCreateOrUpdateQuery!);
-            }
-            
-            if (attribute.Queue.ExceptionQueue != null)
-            {
-                EnsureExists(connectionString, makeChannel, attribute.Queue.ExceptionQueue, false);
-            }
-            
-            Execute(conn, CreateQueueTableQuery(attribute.Table));
-            Execute(conn, CreateQueueQuery(attribute.Queue));
-        }
-
-        if (!startQueue)
         {
             return;
         }
         
+        if (makeChannel == OnMissingChannel.Validate)
+        {
+            throw new InvalidOperationException($"'{attribute.Queue.Name}' doesn't exist");
+        }
+        
         if (attribute.Queue.ExceptionQueue != null)
         {
-            Execute(conn, $"DBMS_AQADM.START_QUEUE(queue_name => '{attribute.Queue.ExceptionQueue.Queue.Name}')");
+            EnsureExists(connectionString, makeChannel, attribute.Queue.ExceptionQueue);
         }
             
-        Execute(conn, $"DBMS_AQADM.START_QUEUE(queue_name => '{attribute.Queue.Name}')");
+        CreateQueueTable(conn, attribute.Table);
+        CreateQueue(conn, attribute.Queue);
+        StartQueue(conn, attribute.Queue);
     }
 
-    private static bool Exist(OracleConnection connection, string queue)
+    private static bool Exists(OracleConnection connection, string queue)
     {
         using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM USER_QUEUES WHERE NAME = :queue_name";
+        cmd.Parameters.Add(new OracleParameter("queue_name", queue));
+        
         using var transaction = connection.BeginTransaction();
-        cmd.CommandText = "SELECT COUNT(*) FROM USER_QUEUES WHERE NAME = :p_queue_name";
-        cmd.Parameters.Add(new OracleParameter("p_queue_name", queue));
+        cmd.Transaction = transaction;
 
         var res = cmd.ExecuteScalar();
         return res is > 0;
     }
 
-    private static void Execute(OracleConnection connection, string query)
+    private static void CreateQueueTable(OracleConnection connection, QueueTable table)
     {
         using var command = connection.CreateCommand();
+        SetCreateQueueTable(command, table);
+        
         using var transaction = connection.BeginTransaction();
-        command.CommandText = query;
+        command.Transaction = transaction;
+        command.ExecuteNonQuery();
+        transaction.Commit();
+    }
+    
+    private static void CreateQueue(OracleConnection connection, QueueInformation queue)
+    {
+        using var command = connection.CreateCommand();
+        SetCreateQueue(command, queue);
+        
+        using var transaction = connection.BeginTransaction();
+        command.Transaction = transaction;
+        command.ExecuteNonQuery();
+        transaction.Commit();
+    }
+    
+    private static void StartQueue(OracleConnection connection, QueueInformation queue)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "DBMS_AQADM.START_QUEUE";
+        command.CommandType = CommandType.StoredProcedure;
+        command.Parameters.Add(new OracleParameter("queue_name", OracleDbType.Varchar2, ParameterDirection.Input) { Value = queue.Name });
+        
+        using var transaction = connection.BeginTransaction();
+        command.Transaction = transaction;
+        command.ExecuteNonQuery();
+        transaction.Commit();
+    }
+    
+    public static void EnsureSubscriptionExists(string connectionString,
+        OnMissingChannel makeChannel, 
+        SubscriptionAttribute attribute)
+    {
+        if (makeChannel == OnMissingChannel.Assume)
+        {
+            return;
+        }
+
+        using var conn = new OracleConnection(connectionString);
+        conn.Open();
+        
+        var exists = SubscriptionExists(conn, attribute);
+        if (exists)
+        {
+            return;
+        }
+
+        if (makeChannel == OnMissingChannel.Validate)
+        {
+            throw new InvalidOperationException($"Subscription for '{attribute.QueueName}' queue with conumser'{attribute.ConsumerName}' doesn't exist");
+        }
+        
+        CreateSubscription(conn, attribute);
+    }
+
+    private static bool SubscriptionExists(OracleConnection connection, SubscriptionAttribute attribute)
+    {
+        using var transaction = connection.BeginTransaction();
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM USER_QUEUE_SUBSCRIBERS
+            WHERE QUEUE_NAME = @QueueName AND CONSUMER_NAME = @ConsumerName";
+            """;
+
+        cmd.Parameters.Add("@QueueName", attribute.QueueName);
+        cmd.Parameters.Add("@ConsumerName", attribute.ConsumerName);
+        var res = cmd.ExecuteScalar();
+        return res is 1;
+    }
+
+    private static void CreateSubscription(OracleConnection connection, SubscriptionAttribute attribute)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "DBMS_AQADM.ADD_SUBSCRIBER";
+        command.CommandType = CommandType.StoredProcedure;
+        command.Parameters.Add(new OracleParameter("queue_name", OracleDbType.Varchar2, ParameterDirection.Input) { Value = attribute.QueueName });
+        command.Parameters.Add(new OracleParameter
+        {
+            ParameterName = "subscriber",
+            Direction = ParameterDirection.Input,
+            UdtTypeName = "sys.aq$_agent",
+            Value = new OracleAQAgent(attribute.ConsumerName) 
+        });
+
+        if (!string.IsNullOrEmpty(attribute.Rule))
+        {
+            command.Parameters.Add(new OracleParameter("rule", OracleDbType.Varchar2, ParameterDirection.Input) { Value = attribute.Rule });
+        }
+        
+        if (!string.IsNullOrEmpty(attribute.Transformation))
+        {
+            command.Parameters.Add(new OracleParameter("transformation", OracleDbType.Varchar2, ParameterDirection.Input) { Value = attribute.Transformation });
+        }
+        
+        if (attribute.QueueToQueue.HasValue)
+        {
+            command.Parameters.Add(new OracleParameter("queue_to_queue", OracleDbType.Boolean, ParameterDirection.Input) { Value = attribute.QueueToQueue.Value });
+        }
+        
+        if (attribute.DeliveryMode.HasValue)
+        {
+            command.Parameters.Add(new OracleParameter("delivery_mode", OracleDbType.Int32, ParameterDirection.Input) { Value = attribute.DeliveryMode.Value });
+        }
+        
+        using var transaction = connection.BeginTransaction();
+        command.Transaction = transaction;
+
         command.ExecuteNonQuery();
         transaction.Commit();
     }
@@ -124,65 +191,26 @@ internal static class QueueFactory
 #endif
         await conn.OpenAsync();
     
-        var exists = Exist(conn, attribute.Queue.Name);
-        if (makeChannel == OnMissingChannel.Validate && exists)
+        var exists = await ExistsAsync(conn, attribute.Queue.Name);
+        if (exists)
         {
             return;
         }
 
-        if (makeChannel == OnMissingChannel.Validate && !exists)
+        if (makeChannel == OnMissingChannel.Validate)
         {
             throw new InvalidOperationException($"'{attribute.Queue.Name}' doesn't exist");
         }
 
-        if (exists && !attribute.OverrideIfNotExists)
-        {
-            return;
-        }
-
-        if (exists)
-        {
-            if (attribute.Queue.ExceptionQueue != null)
-            {
-                await EnsureExistsAsync(connectionString, makeChannel, attribute.Queue.ExceptionQueue, false);
-            }
             
-            if (!string.IsNullOrEmpty(attribute.Table.PayloadTypeCreateOrUpdateQuery))
-            {
-                await ExecuteAsync(conn, attribute.Table.PayloadTypeCreateOrUpdateQuery!);
-            }
-            
-            await ExecuteAsync(conn, $"DBMS_AQADM.STOP_QUEUE(queue_name => '{attribute.Queue.Name}')");
-            await ExecuteAsync(conn, ChangeQueueTableQuery(attribute.Table));
-            await ExecuteAsync(conn, ChangeQueueQuery(attribute.Queue));
-        }
-        else
-        {
-            if (!string.IsNullOrEmpty(attribute.Table.PayloadTypeCreateOrUpdateQuery))
-            {
-                await ExecuteAsync(conn, attribute.Table.PayloadTypeCreateOrUpdateQuery!);
-            }
-            
-            if (attribute.Queue.ExceptionQueue != null)
-            {
-                await EnsureExistsAsync(connectionString, makeChannel, attribute.Queue.ExceptionQueue, false);
-            }
-            
-            await ExecuteAsync(conn, CreateQueueTableQuery(attribute.Table));
-            await ExecuteAsync(conn, CreateQueueQuery(attribute.Queue));
-        }
-
-        if (!startQueue)
-        {
-            return;
-        }
-        
         if (attribute.Queue.ExceptionQueue != null)
         {
-            await ExecuteAsync(conn, $"DBMS_AQADM.START_QUEUE(queue_name => '{attribute.Queue.ExceptionQueue.Queue.Name}')");
+            await EnsureExistsAsync(connectionString, makeChannel, attribute.Queue.ExceptionQueue, false);
         }
             
-        await ExecuteAsync(conn, $"DBMS_AQADM.START_QUEUE(queue_name => '{attribute.Queue.Name}')");
+        await CreateQueueTableAsync(conn, attribute.Table);
+        await CreateQueueAsync(conn, attribute.Queue);
+        await StartQueueAsync(conn, attribute.Queue);
     }
 
     private static async Task<bool> ExistsAsync(OracleConnection connection, string queue)
@@ -201,6 +229,80 @@ internal static class QueueFactory
         return res is > 0;
     }
     
+    private static async Task CreateQueueTableAsync(OracleConnection connection, QueueTable table)
+    {
+#if NETFRAMEWORK
+        using var command = connection.CreateCommand();
+#else
+        await using var command = connection.CreateCommand();
+#endif
+        SetCreateQueueTable(command, table);
+        
+#if NETFRAMEWORK
+        using var transaction = connection.BeginTransaction();
+#else
+        await using var transaction = connection.BeginTransaction();
+#endif
+        command.Transaction = transaction;
+        await command.ExecuteNonQueryAsync();
+        
+#if NETFRAMEWORK
+        transaction.Commit();
+#else
+        await transaction.CommitAsync();
+#endif
+    }
+    
+    private static async Task CreateQueueAsync(OracleConnection connection, QueueInformation queue)
+    {
+#if NETFRAMEWORK
+        using var command = connection.CreateCommand();
+#else
+        await using var command = connection.CreateCommand();
+#endif
+        SetCreateQueue(command, queue);
+        
+#if NETFRAMEWORK
+        using var transaction = connection.BeginTransaction();
+#else
+        await using var transaction = connection.BeginTransaction();
+#endif       
+        command.Transaction = transaction;
+        await command.ExecuteNonQueryAsync();
+        
+#if NETFRAMEWORK
+        transaction.Commit();
+#else
+        await transaction.CommitAsync();
+#endif
+    }
+    
+    private static async Task StartQueueAsync(OracleConnection connection, QueueInformation queue)
+    {
+#if NETFRAMEWORK
+        using var command = connection.CreateCommand();
+#else
+        await using var command = connection.CreateCommand();
+#endif
+;
+        command.CommandText = "DBMS_AQADM.START_QUEUE";
+        command.CommandType = CommandType.StoredProcedure;
+        command.Parameters.Add(new OracleParameter("queue_name", OracleDbType.Varchar2, ParameterDirection.Input) { Value = queue.Name });
+        
+#if NETFRAMEWORK
+        using var transaction = connection.BeginTransaction();
+#else
+        await using var transaction = connection.BeginTransaction();
+#endif
+
+        command.Transaction = transaction;
+        await command.ExecuteNonQueryAsync();
+#if NETFRAMEWORK
+        transaction.Commit();
+#else
+        await transaction.CommitAsync();
+#endif
+    }
     private static async Task ExecuteAsync(OracleConnection connection, string query)
     {
 #if NETFRAMEWORK
@@ -220,392 +322,109 @@ internal static class QueueFactory
 #endif
     }
     
-    private static string CreateQueueTableQuery(QueueTable table)
+    private static void SetCreateQueueTable(OracleCommand command, QueueTable table)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("DBMS_AQADM.CREATE_QUEUE_TABLE(");
-        sb.Append(' ', 2).AppendLine($"queue_table         => '{table.Name}',");
-        sb.Append(' ', 2).Append($"queue_payload_type  => '{table.PayloadType}'");
-        
-        if (!string.IsNullOrEmpty(table.StorageClause))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"storage_clause      => '{table.StorageClause}'");
-        }
+        command.CommandText = "DBMS_AQADM.CREATE_QUEUE_TABLE";
+        command.CommandType = CommandType.StoredProcedure;
+        command.Parameters.Add(new OracleParameter("queue_table", OracleDbType.Varchar2, ParameterDirection.Input) { Value = table.Name });
+        command.Parameters.Add(new OracleParameter("queue_payload_type", OracleDbType.Varchar2, ParameterDirection.Input) { Value = table.PayloadType });
 
-        if (!string.IsNullOrEmpty(table.SortList))
+        if (table.StorageClause != null)
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"sort_list           => '{table.SortList}'");
+            command.Parameters.Add(new OracleParameter("storage_clause", OracleDbType.Varchar2, ParameterDirection.Input) { Value = table.StorageClause});
+        }
+        
+        if (table.SortList != null)
+        {
+            command.Parameters.Add(new OracleParameter("sort_list", OracleDbType.Varchar2, ParameterDirection.Input) { Value = table.SortList });
         }
         
         if (table.MultipleConsumers.HasValue)
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"multiple_consumers  => {table.MultipleConsumers.Value.ToString().ToUpper()}");
+            command.Parameters.Add(new OracleParameter("multiple_consumers", OracleDbType.Boolean, ParameterDirection.Input) { Value = table.MultipleConsumers.Value });
         }
         
         if (table.MessageGrouping.HasValue)
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"message_grouping    => {table.MessageGrouping}");
+            command.Parameters.Add(new OracleParameter("message_grouping", OracleDbType.Int32, ParameterDirection.Input) { Value = table.MessageGrouping.Value });
         }
         
         if (!string.IsNullOrEmpty(table.Comment))
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"comment             => '{table.Comment}'");
+            command.Parameters.Add(new OracleParameter("comment", OracleDbType.Varchar2, ParameterDirection.Input) { Value = table.Comment });
         }
         
         if (table.AutoCommit.HasValue)
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"auto_commit         => {table.AutoCommit.Value.ToString().ToUpper()}");
-        }    
-        
+            command.Parameters.Add(new OracleParameter("auto_commit", OracleDbType.Boolean, ParameterDirection.Input) { Value = table.AutoCommit.Value });
+        }
+
         if (table.PrimaryInstance.HasValue)
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"primary_instance    => {table.PrimaryInstance.Value}");
+            command.Parameters.Add(new OracleParameter("primary_instance", OracleDbType.Int32, ParameterDirection.Input) { Value = table.PrimaryInstance.Value });
         }
         
         if (table.SecondaryInstance.HasValue)
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"secondary_instance  => {table.SecondaryInstance.Value}");
+            command.Parameters.Add(new OracleParameter("secondary_instance", OracleDbType.Int32, ParameterDirection.Input) { Value = table.SecondaryInstance.Value });
         }
         
         if (!string.IsNullOrEmpty(table.Compatible))
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"compatible          => '{table.Compatible}'");
+            command.Parameters.Add(new OracleParameter("compatible", OracleDbType.Varchar2, ParameterDirection.Input) { Value = table.Compatible });
         }
         
         if (table.Secure.HasValue)
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"secure              => {table.Secure.Value.ToString().ToUpper()}");
+            command.Parameters.Add(new OracleParameter("secure", OracleDbType.Boolean, ParameterDirection.Input) { Value = table.Secure.Value });
         }
         
-        if (table.RetentionTime.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"retention_time      => {table.RetentionTime.Value.ToString()}");
-        }
-        
-        if (table.DependencyTracking.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"dependency_tracking => {table.DependencyTracking.Value.ToString().ToUpper()}");
-        }
-        
-        if (table.MaxRetries.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"max_retries         => {table.MaxRetries.Value.ToString()}");
-        }
-        
-        if (table.RetryDelay.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"retry_delay         => {table.RetryDelay.Value.ToString()}");
-        }
-        
-        if (!string.IsNullOrEmpty(table.Users))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"users               => '{table.Users}'");
-        }
-        
-        if (!string.IsNullOrEmpty(table.UserComment))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"user_comment        => '{table.UserComment}'");
-        }
-        
-        table.Configuration?.Invoke(sb);
-        
-        sb.AppendLine().Append(");");
-        return sb.ToString();
+        table.Configuration?.Invoke(command);
     }
 
-    private static string ChangeQueueTableQuery(QueueTable table)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("DBMS_AQADM.ALTER_QUEUE_TABLE(");
-        sb.Append(' ', 2).AppendLine($"queue_table         => '{table.Name}',");
-        sb.Append(' ', 2).Append($"queue_payload_type  => '{table.PayloadType.ToString().ToUpper()}'");
-        
-        if (!string.IsNullOrEmpty(table.StorageClause))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"storage_clause      => '{table.StorageClause}'");
-        }
-
-        if (!string.IsNullOrEmpty(table.SortList))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"sort_list           => '{table.SortList}'");
-        }
-        
-        if (table.MultipleConsumers.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"multiple_consumers  => {table.MultipleConsumers.Value.ToString().ToUpper()}");
-        }
-        
-        if (table.MessageGrouping.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"message_grouping    => {table.MessageGrouping}");
-        }
-        
-        if (!string.IsNullOrEmpty(table.Comment))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"comment             => '{table.Comment}'");
-        }
-        
-        if (table.AutoCommit.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"auto_commit         => {table.AutoCommit.Value.ToString().ToUpper()}");
-        }    
-        
-        if (table.PrimaryInstance.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"primary_instance    => {table.PrimaryInstance.Value}");
-        }
-        
-        if (table.SecondaryInstance.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"secondary_instance  => {table.SecondaryInstance.Value}");
-        }
-        
-        if (!string.IsNullOrEmpty(table.Compatible))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"compatible          => '{table.Compatible}'");
-        }
-        
-        if (table.Secure.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"secure              => {table.Secure.Value.ToString().ToUpper()}");
-        }
-        
-        if (table.RetentionTime.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"retention_time      => {table.RetentionTime.Value.ToString()}");
-        }
-        
-        if (table.DependencyTracking.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"dependency_tracking => {table.DependencyTracking.Value.ToString().ToUpper()}");
-        }
-        
-        if (table.MaxRetries.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"max_retries         => {table.MaxRetries.Value.ToString()}");
-        }
-        
-        if (table.RetryDelay.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"retry_delay         => {table.RetryDelay.Value.ToString()}");
-        }
-        
-        if (!string.IsNullOrEmpty(table.Users))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"users               => '{table.Users}'");
-        }
-        
-        if (!string.IsNullOrEmpty(table.UserComment))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"user_comment        => '{table.UserComment}'");
-        }
-        
-        table.Configuration?.Invoke(sb);
-        
-        sb.AppendLine().Append(");");
-        return sb.ToString();
-    }
-    
-     private static string CreateQueueQuery(QueueInformation queue)
-     {
-        var sb = new StringBuilder();
-        sb.AppendLine("DBMS_AQADM.ALTER_QUEUE(");
-        sb.Append(' ', 2).AppendLine($"queue_name         => '{queue.Name}',");
-        sb.Append(' ', 2).Append($"queue_table        => '{queue.Table}'");
-        
-        if (queue.QueueType != null)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"queue_type         => '{queue.QueueType}'");
-        }
-
-        if (!string.IsNullOrEmpty(queue.Comment))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"comment             => '{queue.Comment}'");
-        }
-        
-        if (queue.AutoCommit.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"auto_commit         => {queue.AutoCommit.Value.ToString().ToUpper()}");
-        }    
-        
-        if (queue.PrimaryInstance.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"primary_instance    => {queue.PrimaryInstance.Value}");
-        }
-        
-        if (queue.SecondaryInstance.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"secondary_instance  => {queue.SecondaryInstance.Value}");
-        }
-        
-        if (!string.IsNullOrEmpty(queue.Compatible))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"compatible          => '{queue.Compatible}'");
-        }
-        
-        if (queue.Secure.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"secure              => {queue.Secure.Value.ToString().ToUpper()}");
-        }
-        
-        if (queue.RetentionTime.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"retention_time      => {queue.RetentionTime.Value.ToString()}");
-        }
-        
-        if (queue.DependencyTracking.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"dependency_tracking => {queue.DependencyTracking.Value.ToString().ToUpper()}");
-        }
-        
-        if (queue.MaxRetries.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"max_retries         => {queue.MaxRetries.Value.ToString()}");
-        }
-        
-        if (queue.RetryDelay.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"retry_delay         => {queue.RetryDelay.Value.ToString()}");
-        }
-        
-        if (queue.ExceptionQueue != null)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"exception_queue     => '{queue.ExceptionQueue.Queue.Name}'");
-        }
-        
-        
-        queue.Configuration?.Invoke(sb);
-        
-        sb.AppendLine().Append(");");
-        return sb.ToString();
-    }
-     
-    private static string ChangeQueueQuery(QueueInformation queue)
+    private static void SetCreateQueue(OracleCommand command, QueueInformation queue)
     { 
-        var sb = new StringBuilder();
-        sb.AppendLine("DBMS_AQADM.CREATE_QUEUE(");
-        sb.Append(' ', 2).AppendLine($"queue_name         => '{queue.Name}',");
-        sb.Append(' ', 2).Append($"queue_table        => '{queue.Table}'");
+        command.CommandText = "DBMS_AQADM.CREATE_QUEUE_TABLE";
+        command.CommandType = CommandType.StoredProcedure;
         
-        if (queue.QueueType != null)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"queue_type         => '{queue.QueueType}'");
-        }
-
-        if (!string.IsNullOrEmpty(queue.Comment))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"comment             => '{queue.Comment}'");
-        }
+        command.Parameters.Add(new OracleParameter("queue_name", OracleDbType.Varchar2, ParameterDirection.Input) { Value = queue.Name });
+        command.Parameters.Add(new OracleParameter("queue_table", OracleDbType.Varchar2, ParameterDirection.Input) { Value = queue.Table });
         
-        if (queue.AutoCommit.HasValue)
+        if (queue.QueueType.HasValue)
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"auto_commit         => {queue.AutoCommit.Value.ToString().ToUpper()}");
-        }    
-        
-        if (queue.PrimaryInstance.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"primary_instance    => {queue.PrimaryInstance.Value}");
-        }
-        
-        if (queue.SecondaryInstance.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"secondary_instance  => {queue.SecondaryInstance.Value}");
-        }
-        
-        if (!string.IsNullOrEmpty(queue.Compatible))
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"compatible          => '{queue.Compatible}'");
-        }
-        
-        if (queue.Secure.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"secure              => {queue.Secure.Value.ToString().ToUpper()}");
-        }
-        
-        if (queue.RetentionTime.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"retention_time      => {queue.RetentionTime.Value.ToString()}");
-        }
-        
-        if (queue.DependencyTracking.HasValue)
-        {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"dependency_tracking => {queue.DependencyTracking.Value.ToString().ToUpper()}");
+            command.Parameters.Add(new OracleParameter("queue_type", OracleDbType.Int32, ParameterDirection.Input) { Value = queue.QueueType.Value });
         }
         
         if (queue.MaxRetries.HasValue)
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"max_retries         => {queue.MaxRetries.Value.ToString()}");
+            command.Parameters.Add(new OracleParameter("max_retries", OracleDbType.Int32, ParameterDirection.Input) { Value = queue.MaxRetries.Value });
         }
         
         if (queue.RetryDelay.HasValue)
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"retry_delay         => {queue.RetryDelay.Value.ToString()}");
+            command.Parameters.Add(new OracleParameter("retry_delay", OracleDbType.Int32, ParameterDirection.Input) { Value = queue.RetryDelay.Value });
         }
         
-        if (queue.ExceptionQueue != null)
+        if (queue.RetentionTime.HasValue)
         {
-            sb.AppendLine(",");
-            sb.Append(' ', 2).Append($"exception_queue     => '{queue.ExceptionQueue.Queue.Name}'");
+            command.Parameters.Add(new OracleParameter("retention_time", OracleDbType.Int32, ParameterDirection.Input) { Value = queue.RetentionTime.Value });
+        }
+
+        if (queue.DependencyTracking.HasValue)
+        {
+            command.Parameters.Add(new OracleParameter("dependency_tracking", OracleDbType.Boolean, ParameterDirection.Input) { Value = queue.DependencyTracking.Value });
         }
         
-        queue.Configuration?.Invoke(sb);
+        if (!string.IsNullOrEmpty(queue.Comment))
+        {
+            command.Parameters.Add(new OracleParameter("comment", OracleDbType.Varchar2, ParameterDirection.Input) { Value = queue.Comment });
+        }
         
-        sb.AppendLine().Append(");");
-        return sb.ToString();
+        if (queue.AutoCommit.HasValue)
+        {
+            command.Parameters.Add(new OracleParameter("auto_commit", OracleDbType.Boolean, ParameterDirection.Input) { Value = queue.AutoCommit.Value });
+        }
+        
+        queue.Configuration?.Invoke(command);
     }
 }

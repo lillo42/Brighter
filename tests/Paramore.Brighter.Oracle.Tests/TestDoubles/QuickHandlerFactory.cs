@@ -1,0 +1,13 @@
+﻿using System;
+
+namespace Paramore.Brighter.Oracle.Tests.TestDoubles;
+
+internal class QuickHandlerFactory(Func<IHandleRequests> handlerAction) : IAmAHandlerFactorySync
+{
+    public IHandleRequests Create(Type handlerType, IAmALifetime lifetime)
+    {
+        return handlerAction();
+    }
+
+    public void Release(IHandleRequests? handler, IAmALifetime lifetime) { }
+}

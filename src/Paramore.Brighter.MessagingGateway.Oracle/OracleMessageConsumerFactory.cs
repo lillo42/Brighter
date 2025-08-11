@@ -2,7 +2,7 @@
 
 namespace Paramore.Brighter.MessagingGateway.Oracle;
 
-public class OracleAdvanceQueueMessageConsumerFactory(OraclesMessagingGatewayConnection connection) : IAmAMessageConsumerFactory
+public class OracleMessageConsumerFactory(OracleMessagingGatewayConnection connection) : IAmAMessageConsumerFactory
 {
     /// <inheritdoc />
     public IAmAMessageConsumerSync Create(Subscription subscription) 

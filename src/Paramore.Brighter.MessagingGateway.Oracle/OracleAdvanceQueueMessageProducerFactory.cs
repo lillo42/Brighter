@@ -4,7 +4,7 @@ using Oracle.ManagedDataAccess.Client;
 
 namespace Paramore.Brighter.MessagingGateway.Oracle;
 
-public class OracleAdvanceQueueMessageProducerFactory(OraclesMessagingGatewayConnection connection, IEnumerable<OracleAdvanceQueuePublication> publications) : IAmAMessageProducerFactory
+public class OracleAdvanceQueueMessageProducerFactory(OracleMessagingGatewayConnection connection, IEnumerable<OracleAdvanceQueuePublication> publications) : IAmAMessageProducerFactory
 {
     /// <inheritdoc />
     public Dictionary<ProducerKey, IAmAMessageProducer> Create()
@@ -95,6 +95,8 @@ public class OracleAdvanceQueueMessageProducerFactory(OraclesMessagingGatewayCon
         {
             attribute.Queue.ExceptionQueue.Queue.QueueType = "DBMS_AQADM.EXCEPTION_QUEUE";
         }
+
+        attribute.Table.MultipleConsumers = publication is OracleTransactionalEventQueuePublication;
 
         return attribute;
     }
