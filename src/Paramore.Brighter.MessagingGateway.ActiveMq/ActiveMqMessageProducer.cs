@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Apache.NMS;
+using Apache.NMS.ActiveMQ.Commands;
 
 namespace Paramore.Brighter.MessagingGateway.ActiveMq;
 
@@ -72,10 +73,18 @@ public class ActiveMqMessageProducer(IConnection connection, ActiveMqPublication
         activeMessage.NMSTimestamp = message.Header.TimeStamp.DateTime;
         activeMessage.NMSType = message.Header.Type;
         
-        // if (!RoutingKey.IsNullOrEmpty(message.Header.ReplyTo))
-        // {
-        //     activeMessage.NMSReplyTo = new ActiveMQQueue(message.Header.ReplyTo.Value);
-        // }
+        if (!RoutingKey.IsNullOrEmpty(message.Header.ReplyTo))
+        {
+            if (message.Header.Bag.TryGetValue(HeaderNames.ReplyToType, out var tmp) 
+                && tmp is ReplyToType.Topic)
+            {
+                activeMessage.NMSReplyTo = new ActiveMQTopic(message.Header.ReplyTo.Value);
+            }
+            else
+            {
+                activeMessage.NMSReplyTo = new ActiveMQQueue(message.Header.ReplyTo.Value);
+            }
+        }
 
         if (delay != TimeSpan.Zero)
         {

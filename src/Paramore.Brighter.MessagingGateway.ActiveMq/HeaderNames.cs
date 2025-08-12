@@ -10,5 +10,6 @@ public class HeaderNames
     public const string Subject = "subject";
     public const string Topic = "topic";
     public const string ReceiptHandle = "ReceiptHandle";
-
+    public const string ReplyTo = "Brighter-ActiveMQ-ReplyTo";
+    public const string ReplyToType = "Brighter-ActiveMQ-ReplyToType";
 }

@@ -9,8 +9,8 @@ public class ActiveMqMessageProducerFactory(ActiveMqMessagingGateway connection,
     /// <inheritdoc />
     public Dictionary<ProducerKey, IAmAMessageProducer> Create()
     {
-        var conn = connection.ConnectionFactory.CreateConnection();
-        
+        var conn = connection.GetConnection();
+
         var producers = new Dictionary<ProducerKey, IAmAMessageProducer>();
         foreach (var publication in publications)
         {
@@ -18,6 +18,7 @@ public class ActiveMqMessageProducerFactory(ActiveMqMessagingGateway connection,
             {
                 throw new ConfigurationException("Topic can't be empty");
             }
+            
 
             producers[new ProducerKey(publication.Topic, publication.Type)] = new ActiveMqMessageProducer(conn,
                 publication, 
@@ -30,7 +31,7 @@ public class ActiveMqMessageProducerFactory(ActiveMqMessagingGateway connection,
     /// <inheritdoc />
     public async Task<Dictionary<ProducerKey, IAmAMessageProducer>> CreateAsync()
     {
-        var conn = await connection.ConnectionFactory.CreateConnectionAsync();
+        var conn = await connection.GetConnectionAsync();
         var producers = new Dictionary<ProducerKey, IAmAMessageProducer>();
         foreach (var publication in publications)
         {
