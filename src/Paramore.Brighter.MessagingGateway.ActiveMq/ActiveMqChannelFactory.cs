@@ -3,9 +3,9 @@ using System.Threading.Tasks;
 
 namespace Paramore.Brighter.MessagingGateway.ActiveMq;
 
-public class ActiveMqChannelFactory(ActiveMqMessagingGateway gateway) : IAmAChannelFactory
+public class ActiveMqChannelFactory(ActiveMqMessagingGatewayConnection gatewayConnection) : IAmAChannelFactory
 {
-    private readonly ActiveMqMessageConsumerFactory _factory = new(gateway);
+    private readonly ActiveMqMessageConsumerFactory _factory = new(gatewayConnection);
     
     /// <inheritdoc />
     public IAmAChannelSync CreateSyncChannel(Subscription subscription)

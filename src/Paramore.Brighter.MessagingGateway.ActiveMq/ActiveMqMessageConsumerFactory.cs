@@ -1,6 +1,6 @@
 ﻿namespace Paramore.Brighter.MessagingGateway.ActiveMq;
 
-public class ActiveMqMessageConsumerFactory(ActiveMqMessagingGateway gateway) : IAmAMessageConsumerFactory
+public class ActiveMqMessageConsumerFactory(ActiveMqMessagingGatewayConnection gatewayConnection) : IAmAMessageConsumerFactory
 {
     /// <inheritdoc />
     public IAmAMessageConsumerSync Create(Subscription subscription)
@@ -17,7 +17,7 @@ public class ActiveMqMessageConsumerFactory(ActiveMqMessagingGateway gateway) : 
             throw new ConfigurationException("Excepting ActiveMqTopicSubscription or ActiveMqQueueSubscription");
         }
 
-        var connection = gateway.GetConnection();
+        var connection = gatewayConnection.GetConnection();
         return new ActiveMqMessageConsumer(connection, (ActiveMqSubscription)subscription);
     }
 }

@@ -2,6 +2,7 @@
 
 public enum ConsumerType
 {
+    Default,
     Durable,
     Share,
     ShareDurable

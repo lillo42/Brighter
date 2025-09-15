@@ -144,6 +144,7 @@ public class ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscriptio
         {
             return topicSubscription.ConsumerType switch
             {
+                ConsumerType.Default => session.CreateConsumer(destination, subscription.Selector, subscription.NoLocal),
                 ConsumerType.Durable => session.CreateDurableConsumer((ITopic)destination, subscription.Name, subscription.Selector, subscription.NoLocal),
                 ConsumerType.Share => session.CreateSharedConsumer((ITopic)destination, subscription.Name, subscription.Selector),
                 ConsumerType.ShareDurable => session.CreateSharedDurableConsumer((ITopic)destination, subscription.Name, subscription.Selector),
@@ -200,6 +201,7 @@ public class ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscriptio
         {
             return topicSubscription.ConsumerType switch
             {
+                ConsumerType.Default => await session.CreateConsumerAsync(destination, subscription.Selector, subscription.NoLocal),
                 ConsumerType.Durable => await session.CreateDurableConsumerAsync((ITopic)destination, subscription.Name, subscription.Selector, subscription.NoLocal),
                 ConsumerType.Share => await session.CreateSharedConsumerAsync((ITopic)destination, subscription.Name, subscription.Selector),
                 ConsumerType.ShareDurable => await session.CreateSharedDurableConsumerAsync((ITopic)destination, subscription.Name, subscription.Selector),

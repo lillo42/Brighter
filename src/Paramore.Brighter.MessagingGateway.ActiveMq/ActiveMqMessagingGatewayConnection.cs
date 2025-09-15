@@ -4,7 +4,7 @@ using Apache.NMS;
 
 namespace Paramore.Brighter.MessagingGateway.ActiveMq;
 
-public class ActiveMqMessagingGateway(IConnectionFactory  factory)  : IAmGatewayConfiguration
+public class ActiveMqMessagingGatewayConnection(IConnectionFactory  factory)  : IAmGatewayConfiguration
 {
     
     public IConnectionFactory ConnectionFactory => factory;

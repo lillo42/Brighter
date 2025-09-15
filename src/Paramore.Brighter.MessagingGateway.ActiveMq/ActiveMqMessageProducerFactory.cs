@@ -4,7 +4,7 @@ using Apache.NMS;
 
 namespace Paramore.Brighter.MessagingGateway.ActiveMq;
 
-public class ActiveMqMessageProducerFactory(ActiveMqMessagingGateway connection, IEnumerable<ActiveMqPublication> publications) : IAmAMessageProducerFactory
+public class ActiveMqMessageProducerFactory(ActiveMqMessagingGatewayConnection connection, IEnumerable<ActiveMqPublication> publications) : IAmAMessageProducerFactory
 {
     /// <inheritdoc />
     public Dictionary<ProducerKey, IAmAMessageProducer> Create()
