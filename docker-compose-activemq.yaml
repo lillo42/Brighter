@@ -1,19 +1,10 @@
 services:
-  # Define the ActiveMQ service
   activemq:
-    image: apache/activemq-artemis:latest
-    container_name: activemq-broker
-    environment:
-      ARTEMIS_USER: brighter-active-mq
-      ARTEMIS_PASSWORD: Password123
-      ANONYMOUS_LOGIN: true
-      ARTEMIS_JOURNAL_TYPE: 
+    image: rmohr/activemq:latest
+    container_name: activemq
     ports:
-      # Default OpenWire port for ActiveMQ clients (TCP)
       - "61616:61616"
-      # Default Web Console port for managing ActiveMQ (HTTP)
       - "8161:8161"
-      # Other common ports you might want to expose depending on your needs:
-      # - "5672:5672" # AMQP port
-      # - "1883:1883" # MQTT port
-      # - "61613:61613" # STOMP port
+    environment:
+      - ACTIVEMQ_ADMIN_LOGIN=admin
+      - ACTIVEMQ_ADMIN_PASSWORD=admin
