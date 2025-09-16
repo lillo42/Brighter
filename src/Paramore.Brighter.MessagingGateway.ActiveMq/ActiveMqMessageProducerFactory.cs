@@ -19,7 +19,6 @@ public class ActiveMqMessageProducerFactory(ActiveMqMessagingGatewayConnection c
                 throw new ConfigurationException("Topic can't be empty");
             }
             
-
             producers[new ProducerKey(publication.Topic, publication.Type)] = new ActiveMqMessageProducer(conn,
                 publication, 
                 publication.TimeProvider ?? connection.TimeProvider);

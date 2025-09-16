@@ -160,7 +160,7 @@ public class ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscriptio
     {
         try
         {
-            using var session = await connection.CreateSessionAsync();
+            using var session = await connection.CreateSessionAsync(AcknowledgementMode.ClientAcknowledge);
             using var queue = await CreateDestinationAsync(session, subscription);
             using var consumer = await CreateConsumerAsync(session, queue, subscription);
             
@@ -243,11 +243,11 @@ public class ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscriptio
         }
         
         var header = new MessageHeader(
-            messageId: Id.Create(message.NMSMessageId),
+            messageId: GetId(message),
             topic: GetTopic(message, subscription),
             messageType: GetMessageType(message),
             correlationId: GetCorrelationId(message),
-            timeStamp: message.NMSDeliveryTime,
+            timeStamp: GetTimestamp(message),
             type: new CloudEventsType(message.NMSType),
             contentType: GetContentType(message),
             source: GetSource(message),
@@ -268,14 +268,29 @@ public class ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscriptio
 
         return new Message(header, body);
 
+        static Id GetId(IMessage message)
+        {
+            return Id.Create(message.Properties.Contains(HeaderNames.Id) ? message.Properties.GetString(HeaderNames.Id) : message.NMSMessageId);
+        }
+
         static RoutingKey GetTopic(IMessage message, ActiveMqSubscription subscription)
         {
+            if (!message.Properties.Contains(HeaderNames.Topic))
+            {
+                return subscription.RoutingKey;
+            }
+            
             var topic = message.Properties.GetString(HeaderNames.Topic);
             return string.IsNullOrEmpty(topic) ? subscription.RoutingKey : new RoutingKey(topic);
         }
 
         static MessageType GetMessageType(IMessage message)
         {
+            if (!message.Properties.Contains(HeaderNames.MessageType))
+            {
+                return MessageType.MT_EVENT;
+            }
+            
             var messageType = message.Properties.GetString(HeaderNames.MessageType);
             return Enum.TryParse(messageType, true, out MessageType result) ? result : MessageType.MT_EVENT;
         }
@@ -285,31 +300,66 @@ public class ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscriptio
 
         static ContentType GetContentType(IMessage message)
         {
+            if (!message.Properties.Contains(HeaderNames.DataContentType))
+            {
+                return new ContentType("text/plain");
+            }
+            
             var contentType = message.Properties.GetString(HeaderNames.DataContentType);
             return string.IsNullOrEmpty(contentType) ? new ContentType("text/plain") : new ContentType(contentType);
         }
 
         static string GetSpecVersion(IMessage message)
         {
+            if (!message.Properties.Contains(HeaderNames.SpecVersion))
+            {
+                return MessageHeader.DefaultSpecVersion;
+            }
+            
             var specVersion = message.Properties.GetString(HeaderNames.SpecVersion);
-            return string.IsNullOrEmpty(specVersion) ? HeaderNames.SpecVersion : specVersion;
+            return string.IsNullOrEmpty(specVersion) ? MessageHeader.DefaultSpecVersion : specVersion;
+
         }
 
         static Uri GetSource(IMessage message)
         {
+            if (!message.Properties.Contains(HeaderNames.DataContentType))
+            {
+                return new Uri(MessageHeader.DefaultSource, UriKind.RelativeOrAbsolute);
+            }
+            
             var source = message.Properties.GetString(HeaderNames.Source);
-            return string.IsNullOrEmpty(source) ? new Uri(MessageHeader.DefaultSource) : new Uri(source);
+            return string.IsNullOrEmpty(source) ? new Uri(MessageHeader.DefaultSource) : new Uri(source, UriKind.RelativeOrAbsolute);
         }
         
         static Uri? GetDataSchema(IMessage message)
         {
+            if (!message.Properties.Contains(HeaderNames.DataSchema))
+            {
+                return null;
+            }
+            
             var dataSchema = message.Properties.GetString(HeaderNames.DataSchema);
-            return string.IsNullOrEmpty(dataSchema) ? null : new Uri(dataSchema);
+            return string.IsNullOrEmpty(dataSchema) ? null : new Uri(dataSchema, UriKind.RelativeOrAbsolute);
         }
         
-        static string? GetSubject(IMessage message) => message.Properties.GetString(HeaderNames.Subject);
+        static string? GetSubject(IMessage message)
+        {
+            return message.Properties.Contains(HeaderNames.DataContentType) ? message.Properties.GetString(HeaderNames.Subject) : null;
+        }
 
         static RoutingKey? GetReplyTo(IMessage message) => message.NMSReplyTo == null ? null : new RoutingKey(message.NMSReplyTo.ToString()!);
+
+        static DateTimeOffset GetTimestamp(IMessage message)
+        {
+            if (message.Properties.Contains(HeaderNames.TimeStamp)
+                && DateTimeOffset.TryParse(message.Properties.GetString(HeaderNames.TimeStamp), out var timestamp))
+            {
+                return timestamp;
+            }
+
+            return DateTimeOffset.UtcNow;
+        }
     }
     
     /// <inheritdoc />

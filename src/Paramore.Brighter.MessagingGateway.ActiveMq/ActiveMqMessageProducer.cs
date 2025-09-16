@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Apache.NMS;
 using Apache.NMS.ActiveMQ.Commands;
+using Paramore.Brighter.Extensions;
 
 namespace Paramore.Brighter.MessagingGateway.ActiveMq;
 
@@ -68,7 +69,7 @@ public class ActiveMqMessageProducer(IConnection connection, ActiveMqPublication
 
     private void AddProperties(IMessage activeMessage, Message message, TimeSpan delay)
     {
-        activeMessage.NMSMessageId = message.Id;
+        // activeMessage.NMSMessageId = message.Id;
         activeMessage.NMSCorrelationID = message.Header.CorrelationId;
         activeMessage.NMSTimestamp = message.Header.TimeStamp.DateTime;
         activeMessage.NMSType = message.Header.Type;
@@ -91,11 +92,13 @@ public class ActiveMqMessageProducer(IConnection connection, ActiveMqPublication
             activeMessage.NMSDeliveryTime = (timeProvider.GetUtcNow() + delay).DateTime;
         }
         
+        activeMessage.Properties[HeaderNames.Id] = message.Header.MessageId.Value;
         activeMessage.Properties[HeaderNames.Topic] = message.Header.Topic.Value;
+        activeMessage.Properties[HeaderNames.TimeStamp] = message.Header.TimeStamp.ToRfc3339();
         activeMessage.Properties[HeaderNames.MessageType] = message.Header.MessageType.ToString();
         activeMessage.Properties[HeaderNames.DataContentType] = message.Header.ContentType.ToString();
         activeMessage.Properties[HeaderNames.SpecVersion] = message.Header.SpecVersion;
-        activeMessage.Properties[HeaderNames.Source] = message.Header.Source;
+        activeMessage.Properties[HeaderNames.Source] = message.Header.Source.ToString();
 
         if (message.Header.DataSchema != null)
         {

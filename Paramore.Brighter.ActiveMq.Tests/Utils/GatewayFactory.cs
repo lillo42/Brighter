@@ -5,31 +5,22 @@ namespace Paramore.Brighter.ActiveMq.Tests.Utils;
 
 public static class GatewayFactory
 {
-    public static ActiveMqMessagingGatewayConnection CreateConnection() 
-        => new(new ConnectionFactory("activemq:tcp://localhost:61616"));
+    public static ActiveMqMessagingGatewayConnection CreateConnection()
+    {
+        var conn = new ActiveMqMessagingGatewayConnection(new ConnectionFactory("activemq:tcp://localhost:61616"));
+        
+        conn.GetConnection().Start();
 
-    // public static async Task<SimpleConsumer> CreateSimpleConsumer(RocketMessagingGatewayConnection connection, Publication publication)
-    //     => await CreateSimpleConsumer(connection, publication.Topic!);
-    //
-    // public static async Task<SimpleConsumer> CreateSimpleConsumer(RocketMessagingGatewayConnection connection, string topic)
-    // {
-    //     return await new SimpleConsumer.Builder()
-    //         .SetClientConfig(connection.ClientConfig)
-    //         .SetConsumerGroup(Guid.NewGuid().ToString())
-    //         .SetAwaitDuration(TimeSpan.Zero)
-    //         .SetSubscriptionExpression(new Dictionary<string, FilterExpression> { [topic] = new("*") })
-    //         .Build();
-    // }
-    //
-    // public static async Task<Producer> CreateProducer(RocketMessagingGatewayConnection connection, Publication publication)
-    //     => await CreateProducer(connection, publication.Topic!);
-    //
-    // public static async Task<Producer> CreateProducer(RocketMessagingGatewayConnection connection, string topic)
-    // {
-    //     return await new Producer.Builder()
-    //         .SetClientConfig(connection.ClientConfig)
-    //         .SetMaxAttempts(connection.MaxAttempts)
-    //         .SetTopics(topic)
-    //         .Build();
-    // }
+        return conn;
+    }
+
+    public static ActiveMqMessageProducer CreateProducer(ActiveMqPublication publication)
+        => CreateProducer(CreateConnection(), publication);
+    public static ActiveMqMessageProducer CreateProducer(ActiveMqMessagingGatewayConnection connection, ActiveMqPublication publication) 
+        => new(connection.GetConnection(), publication, connection.TimeProvider);
+
+    public static ActiveMqMessageConsumer CreateConsumer(ActiveMqSubscription subscription)
+        => CreateConsumer(CreateConnection(), subscription);
+    public static ActiveMqMessageConsumer CreateConsumer(ActiveMqMessagingGatewayConnection connection, ActiveMqSubscription subscription) =>
+        new(connection.GetConnection(), subscription);
 }

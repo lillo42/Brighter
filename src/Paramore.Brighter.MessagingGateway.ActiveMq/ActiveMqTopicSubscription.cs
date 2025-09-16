@@ -19,7 +19,7 @@ public class ActiveMqTopicSubscription(
     OnMissingChannel makeChannels = OnMissingChannel.Create,
     TimeSpan? emptyChannelDelay = null,
     TimeSpan? channelFailureDelay = null,
-    ConsumerType consumerType = ConsumerType.Durable,
+    ConsumerType consumerType = ConsumerType.Default,
     string? selector = null,
     bool noLocal = false) : ActiveMqSubscription(subscriptionName, channelName, routingKey, requestType, getRequestType,
     bufferSize, noOfPerformers, timeOut, requeueCount, requeueDelay, unacceptableMessageLimit, messagePumpType, channelFactory, 
