@@ -7,7 +7,7 @@ namespace Paramore.Brighter.MessagingGateway.Oracle;
 public sealed class QueueTable
 {
     public string Name { get; set; } = string.Empty;
-    public string PayloadType { get; set; } = string.Empty;
+    public string PayloadType { get; set; } = "RAW";
     public string? StorageClause { get; set; }
     public string? SortList { get; set; }
     public bool? MultipleConsumers { get; set; }

@@ -58,7 +58,7 @@ public class OracleMessageConsumerFactory(OracleMessagingGatewayConnection conne
 
         if (attribute.Queue.ExceptionQueue is { Queue.QueueType: null })
         {
-            attribute.Queue.ExceptionQueue.Queue.QueueType = "DBMS_AQADM.EXCEPTION_QUEUE";
+            attribute.Queue.ExceptionQueue.Queue.QueueType = 1;
         }
 
         return attribute;

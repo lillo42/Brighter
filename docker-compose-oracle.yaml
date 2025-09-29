@@ -1,6 +1,6 @@
 services:
   oracle:
-    image: gvenzl/oracle-xe:21-slim
+    image: gvenzl/oracle-free:latest
     container_name: oracle-db
     environment:
       - ORACLE_PASSWORD=MyPassword123

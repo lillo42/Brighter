@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Data;
-using System.Text;
 using System.Threading.Tasks;
 using Oracle.ManagedDataAccess.Client;
 
@@ -79,7 +78,7 @@ internal static class QueueFactory
     private static void StartQueue(OracleConnection connection, QueueInformation queue)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = "DBMS_AQADM.START_QUEUE";
+        command.CommandText = "SYS.DBMS_AQADM.START_QUEUE";
         command.CommandType = CommandType.StoredProcedure;
         command.Parameters.Add(new OracleParameter("queue_name", OracleDbType.Varchar2, ParameterDirection.Input) { Value = queue.Name });
         
@@ -324,7 +323,7 @@ internal static class QueueFactory
     
     private static void SetCreateQueueTable(OracleCommand command, QueueTable table)
     {
-        command.CommandText = "DBMS_AQADM.CREATE_QUEUE_TABLE";
+        command.CommandText = "SYS.DBMS_AQADM.CREATE_QUEUE_TABLE";
         command.CommandType = CommandType.StoredProcedure;
         command.Parameters.Add(new OracleParameter("queue_table", OracleDbType.Varchar2, ParameterDirection.Input) { Value = table.Name });
         command.Parameters.Add(new OracleParameter("queue_payload_type", OracleDbType.Varchar2, ParameterDirection.Input) { Value = table.PayloadType });
@@ -384,7 +383,7 @@ internal static class QueueFactory
 
     private static void SetCreateQueue(OracleCommand command, QueueInformation queue)
     { 
-        command.CommandText = "DBMS_AQADM.CREATE_QUEUE_TABLE";
+        command.CommandText = "SYS.DBMS_AQADM.CREATE_QUEUE";
         command.CommandType = CommandType.StoredProcedure;
         
         command.Parameters.Add(new OracleParameter("queue_name", OracleDbType.Varchar2, ParameterDirection.Input) { Value = queue.Name });

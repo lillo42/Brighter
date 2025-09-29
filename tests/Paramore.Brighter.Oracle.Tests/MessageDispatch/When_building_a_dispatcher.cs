@@ -47,14 +47,14 @@ public class DispatchBuilderTests : IDisposable
             .ChannelFactory(new OracleChannelFactory(connection))
             .Subscriptions([
                 new OracleAdvanceQueueSubscription<MyEvent>(
-                    new SubscriptionName($"FOO{Uuid.New():N}"),
-                    new ChannelName($"MARY{Uuid.New():N}"),
+                    new SubscriptionName("foo"),
+                    new ChannelName("mary"),
                     new RoutingKey(Uuid.New().ToString("N")),
                     messagePumpType: MessagePumpType.Reactor,
                     timeOut: TimeSpan.FromMilliseconds(200)),
                 new OracleAdvanceQueueSubscription<MyEvent>(
-                    new SubscriptionName($"BAR{Uuid.New():N}"),
-                    new ChannelName($"ALICE{Uuid.New():N}"),
+                    new SubscriptionName("bar"),
+                    new ChannelName("alice"),
                     new RoutingKey(Uuid.New().ToString("N")),
                     messagePumpType: MessagePumpType.Reactor,
                     timeOut: TimeSpan.FromMilliseconds(200))

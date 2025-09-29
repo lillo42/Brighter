@@ -93,7 +93,7 @@ public class OracleAdvanceQueueMessageProducerFactory(OracleMessagingGatewayConn
 
         if (attribute.Queue.ExceptionQueue is { Queue.QueueType: null })
         {
-            attribute.Queue.ExceptionQueue.Queue.QueueType = "DBMS_AQADM.EXCEPTION_QUEUE";
+            attribute.Queue.ExceptionQueue.Queue.QueueType = 1;
         }
 
         attribute.Table.MultipleConsumers = publication is OracleTransactionalEventQueuePublication;
