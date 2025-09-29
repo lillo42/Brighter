@@ -2,30 +2,78 @@
 
 namespace Paramore.Brighter.MessagingGateway.ActiveMq;
 
-public abstract class ActiveMqSubscription(
-    SubscriptionName subscriptionName,
-    ChannelName channelName,
-    RoutingKey routingKey,
-    Type? requestType = null,
-    Func<Message, Type>? getRequestType = null,
-    int bufferSize = 1,
-    int noOfPerformers = 1,
-    TimeSpan? timeOut = null,
-    int requeueCount = -1,
-    TimeSpan? requeueDelay = null,
-    int unacceptableMessageLimit = 0,
-    MessagePumpType messagePumpType = MessagePumpType.Unknown,
-    IAmAChannelFactory? channelFactory = null,
-    OnMissingChannel makeChannels = OnMissingChannel.Create,
-    TimeSpan? emptyChannelDelay = null,
-    TimeSpan? channelFailureDelay = null,
-    string? selector = null,
-    bool noLocal = false)
-    : Subscription(subscriptionName,
+/// <summary>
+/// An abstract base class for Brighter <see cref="Subscription"/> configurations
+/// that configure a message consumer for an ActiveMQ broker (or any broker using the NMS API).
+/// </summary>
+/// <remarks>
+/// This class extends the standard Brighter <see cref="Subscription"/> with ActiveMQ/NMS-specific
+/// client settings such as a message selector and the NoLocal flag.
+/// </remarks>
+public abstract class ActiveMqSubscription : Subscription
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ActiveMqSubscription"/> class.
+    /// </summary>
+    /// <param name="subscriptionName">The unique name for this subscription.</param>
+    /// <param name="channelName">The name of the channel to be created for this subscription.</param>
+    /// <param name="routingKey">The key used by the broker to route messages to this consumer's destination (e.g., queue or topic name).</param>
+    /// <param name="requestType">The type of <see cref="IRequest"/> the consumer handles.</param>
+    /// <param name="getRequestType">A function used to determine the request type from a received message, for polymorphing.</param>
+    /// <param name="bufferSize">The number of messages to retrieve from the broker in a single operation (prefetch).</param>
+    /// <param name="noOfPerformers">The number of message pumps to run concurrently for this channel.</param>
+    /// <param name="timeOut">The amount of time to wait for a message on the channel before timing out.</param>
+    /// <param name="requeueCount">The maximum number of times a message should be requeued before being moved to the dead-letter queue (DLQ). Use -1 for infinite.</param>
+    /// <param name="requeueDelay">The delay to wait before a failed message is requeued.</param>
+    /// <param name="unacceptableMessageLimit">The number of unacceptable messages (parse failures, etc.) allowed before the channel is killed.</param>
+    /// <param name="messagePumpType">The type of message pump to use (e.g., default, deferred).</param>
+    /// <param name="channelFactory">An optional factory to create the channel, overriding the default.</param>
+    /// <param name="makeChannels">Specifies the behavior if the channel doesn't exist.</param>
+    /// <param name="emptyChannelDelay">The delay when the channel is empty.</param>
+    /// <param name="channelFailureDelay">The delay when an exception occurs on the channel.</param>
+    /// <param name="selector">The message selector expression to filter messages received by the consumer.</param>
+    /// <param name="noLocal">A flag indicating whether this consumer should suppress messages published by its own connection.</param>
+    protected ActiveMqSubscription(SubscriptionName subscriptionName,
+        ChannelName channelName,
+        RoutingKey routingKey,
+        Type? requestType = null,
+        Func<Message, Type>? getRequestType = null,
+        int bufferSize = 1,
+        int noOfPerformers = 1,
+        TimeSpan? timeOut = null,
+        int requeueCount = -1,
+        TimeSpan? requeueDelay = null,
+        int unacceptableMessageLimit = 0,
+        MessagePumpType messagePumpType = MessagePumpType.Unknown,
+        IAmAChannelFactory? channelFactory = null,
+        OnMissingChannel makeChannels = OnMissingChannel.Create,
+        TimeSpan? emptyChannelDelay = null,
+        TimeSpan? channelFailureDelay = null,
+        string? selector = null,
+        bool noLocal = false) : base(subscriptionName,
         channelName, routingKey, requestType, getRequestType, bufferSize, noOfPerformers, timeOut, requeueCount,
         requeueDelay, unacceptableMessageLimit, messagePumpType, channelFactory, makeChannels, emptyChannelDelay,
         channelFailureDelay)
-{
-    public string? Selector { get; } = selector;
-    public bool NoLocal { get; } = noLocal;
+    {
+        Selector = selector;
+        NoLocal = noLocal;
+    }
+
+    /// <summary>
+    /// Gets the message selector expression used to filter messages received by the consumer.
+    /// </summary>
+    /// <value>
+    /// A string representing an SQL 92 style selector expression (e.g., "priority > 5"), 
+    /// or <see langword="null"/> to receive all messages.
+    /// </value>
+    public string? Selector { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether this consumer should receive messages published by its own connection.
+    /// </summary>
+    /// <value>
+    /// <see langword="true"/> if messages published by the same connection should be suppressed; 
+    /// otherwise, <see langword="false"/>. This is primarily used with Topics.
+    /// </value>
+    public bool NoLocal { get; }
 }
