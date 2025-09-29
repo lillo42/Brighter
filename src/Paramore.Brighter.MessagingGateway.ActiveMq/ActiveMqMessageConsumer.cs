@@ -7,94 +7,75 @@ using Apache.NMS;
 
 namespace Paramore.Brighter.MessagingGateway.ActiveMq;
 
-public class ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscription subscription)
-    : IAmAMessageConsumerSync, IAmAMessageConsumerAsync
+public class ActiveMqMessageConsumer : IAmAMessageConsumerSync, IAmAMessageConsumerAsync
 {
+    private readonly ActiveMqSubscription _subscription;
+    private readonly ISession _session;
+    private readonly IDestination _queue;
+    private readonly IMessageConsumer _consumer;
+
+    public ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscription subscription)
+    {
+        _subscription = subscription;
+        
+        _session = connection.CreateSession(AcknowledgementMode.Transactional);
+        _queue = CreateDestination(_session, _subscription);
+        _consumer = CreateConsumer(_session, _queue, _subscription);
+    }
+
     /// <inheritdoc />
     public void Acknowledge(Message message)
     {
-        if (!message.Header.Bag.TryGetValue(HeaderNames.ReceiptHandle, out object? value) 
-            || value is not IMessage activeMessage)
-        {
-            return;
-        }
-
-        activeMessage.Acknowledge();
+        _session.Commit();
     }
     
     /// <inheritdoc />
     public async Task AcknowledgeAsync(Message message, CancellationToken cancellationToken = default)
     {
-        if (!message.Header.Bag.TryGetValue(HeaderNames.ReceiptHandle, out object? value) 
-            || value is not IMessage activeMessage)
-        {
-            return;
-        }
-
-        await activeMessage.AcknowledgeAsync();
+        await _session.CommitAsync();
     }
 
     /// <inheritdoc />
     public bool Reject(Message message)
     {
-        if (!message.Header.Bag.TryGetValue(HeaderNames.ReceiptHandle, out object? value) 
-            || value is not IMessage activeMessage)
-        {
-            return true;
-        }
-
-        activeMessage.Acknowledge();
+        _session.Commit();
         return true;
     }
     
     /// <inheritdoc />
     public async Task<bool> RejectAsync(Message message, CancellationToken cancellationToken = default)
     {
-        if (!message.Header.Bag.TryGetValue(HeaderNames.ReceiptHandle, out object? value) 
-         || value is not IMessage activeMessage)
-        {
-            return true;
-        }
-
-        await activeMessage.AcknowledgeAsync();
+        await _session.CommitAsync();
         return true;
     }
 
     /// <inheritdoc />
     public void Purge()
     {
-        using var session = connection.CreateSession();
-        using var queue = CreateDestination(session, subscription);
-        using var consumer = CreateConsumer(session, queue, subscription);
-        
         while (true)
         {
-            var message = consumer.Receive(TimeSpan.FromSeconds(1));
+            var message = _consumer.Receive(TimeSpan.FromSeconds(1));
             if (message == null)
             {
                 break;
             }
             
-            message.Acknowledge();
+            _session.Commit();
         }
     }
     
     /// <inheritdoc />
     public async Task PurgeAsync(CancellationToken cancellationToken = default)
     {
-        using var session = await connection.CreateSessionAsync();
-        using var queue = await CreateDestinationAsync(session, subscription);
-        using var consumer = await CreateConsumerAsync(session, queue, subscription);
-        
         while (true)
         {
-            var message = await consumer.ReceiveAsync(TimeSpan.FromSeconds(1));
+            var message = await _consumer.ReceiveAsync(TimeSpan.FromSeconds(1));
             if (message == null)
             {
                 break;
             }
             
-            await message.AcknowledgeAsync();
+            await _session.CommitAsync();
         }
     }
 
@@ -103,17 +84,13 @@ public class ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscriptio
     {
         try
         {
-            using var session = connection.CreateSession();
-            using var queue = CreateDestination(session, subscription);
-            using var consumer = CreateConsumer(session, queue, subscription);
-            
-            var message = consumer.Receive(timeOut ?? TimeSpan.Zero);
+            var message = _consumer.Receive(timeOut ?? TimeSpan.Zero);
             if (message == null)
             {
                 return [new Message()];
             }
 
-            return [ToBrighterMessage(message, subscription)];
+            return [ToBrighterMessage(message, _subscription)];
         }
         catch
         {
@@ -160,73 +137,33 @@ public class ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscriptio
     {
         try
         {
-            using var session = await connection.CreateSessionAsync(AcknowledgementMode.ClientAcknowledge);
-            using var queue = await CreateDestinationAsync(session, subscription);
-            using var consumer = await CreateConsumerAsync(session, queue, subscription);
-            
-            var message = await consumer.ReceiveAsync(timeOut ?? TimeSpan.Zero);
+            var message = await _consumer.ReceiveAsync(timeOut ?? TimeSpan.Zero);
             if (message == null)
             {
                 return [new Message()];
             }
 
-            return [ToBrighterMessage(message, subscription)];
+            return [ToBrighterMessage(message, _subscription)];
         }
         catch
         {
             return [new Message()];
         }
     }
-    
-    private static async Task<IDestination> CreateDestinationAsync(ISession session, ActiveMqSubscription subscription)
-    {
-        return subscription switch
-        {
-            ActiveMqQueueSubscription => await session.GetQueueAsync(subscription.ChannelName.Value),
-            ActiveMqTopicSubscription => await session.GetTopicAsync(subscription.RoutingKey.Value),
-            _ => throw new InvalidOperationException("Invalid ActiveMqSubscription")
-        };
-    }
-
-    private static async Task<IMessageConsumer> CreateConsumerAsync(ISession session,
-        IDestination destination,
-        ActiveMqSubscription subscription)
-    {
-        if (subscription is ActiveMqQueueSubscription)
-        {
-            return await session.CreateConsumerAsync(destination, subscription.Selector, subscription.NoLocal);
-        }
-        
-        if(subscription is ActiveMqTopicSubscription topicSubscription)
-        {
-            return topicSubscription.ConsumerType switch
-            {
-                ConsumerType.Default => await session.CreateConsumerAsync(destination, subscription.Selector, subscription.NoLocal),
-                ConsumerType.Durable => await session.CreateDurableConsumerAsync((ITopic)destination, subscription.Name, subscription.Selector, subscription.NoLocal),
-                ConsumerType.Share => await session.CreateSharedConsumerAsync((ITopic)destination, subscription.Name, subscription.Selector),
-                ConsumerType.ShareDurable => await session.CreateSharedDurableConsumerAsync((ITopic)destination, subscription.Name, subscription.Selector),
-                _ => throw new ConfigurationException("Invalid consumer type")
-            };
-        }
-
-        throw new ConfigurationException("Invalid ActiveMqSubscription");
-    }
 
     /// <inheritdoc />
     public bool Requeue(Message message, TimeSpan? delay = null)
     {
-        // ActiveMQ doesn't support requeue
-        // we need to wait ActiveMQ send the message again
+        _session.Rollback();
         return true;
     }
     
     /// <inheritdoc />
-    public Task<bool> RequeueAsync(Message message, TimeSpan? delay = null,
+    public async Task<bool> RequeueAsync(Message message, TimeSpan? delay = null,
         CancellationToken cancellationToken = default)
     {
-        // ActiveMQ doesn't support requeue
-        // we need to wait ActiveMQ send the message again
-        return Task.FromResult(true);
+        await _session.RollbackAsync();
+        return true;
     }
 
     private static Message ToBrighterMessage(IMessage message, ActiveMqSubscription subscription)
@@ -241,6 +178,8 @@ public class ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscriptio
 
             bag[keyString] = message.Properties[keyString];
         }
+
+        bag[HeaderNames.ReceiptHandle] = message;
         
         var header = new MessageHeader(
             messageId: GetId(message),
@@ -365,11 +304,15 @@ public class ActiveMqMessageConsumer(IConnection connection, ActiveMqSubscriptio
     /// <inheritdoc />
     public void Dispose()
     {
+        _consumer.Dispose();
+        _queue.Dispose();
+        _session.Dispose();
     }
 
     /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
+        Dispose(); 
         return new ValueTask();
     }
 }

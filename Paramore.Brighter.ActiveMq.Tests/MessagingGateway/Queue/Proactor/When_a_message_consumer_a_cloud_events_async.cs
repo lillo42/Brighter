@@ -7,8 +7,8 @@ using Xunit;
 
 namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Queue.Proactor;
 
-[Trait("Category", "ActiveMq")]
-public class ActiveMqBufferedConsumerCloudEventsTestsAsync : IAsyncDisposable 
+[Trait("Category", "ActiveMQ")]
+public class ActiveMqBufferedConsumerCloudEventsTestsAsync : IDisposable 
 {
     private readonly IAmAMessageProducerAsync _messageProducer;
     private readonly IAmAMessageConsumerAsync _messageConsumer;
@@ -21,10 +21,8 @@ public class ActiveMqBufferedConsumerCloudEventsTestsAsync : IAsyncDisposable
             Topic = _routingKey
         };
 
-        var connection = GatewayFactory.CreateConnection();
-        _messageProducer = GatewayFactory.CreateProducer(connection, publication);
-        _messageConsumer = GatewayFactory.CreateConsumer(
-            connection,
+        _messageProducer = GatewayFactory.CreateQueueProducer(publication);
+        _messageConsumer = GatewayFactory.CreateQueueConsumer(
             new ActiveMqQueueSubscription("sub-name", 
                 _routingKey.Value,
                 _routingKey, 
@@ -63,10 +61,10 @@ public class ActiveMqBufferedConsumerCloudEventsTestsAsync : IAsyncDisposable
         Assert.Equal(messageOne.Header.DataSchema, messages[0].Header.DataSchema);
     }
 
-    public async ValueTask DisposeAsync()
+    public void Dispose()
     {
-        await _messageConsumer.PurgeAsync();
-        await _messageConsumer.DisposeAsync();
-        await _messageProducer.DisposeAsync();
+        _messageConsumer.PurgeAsync().GetAwaiter().GetResult();
+        _messageConsumer.DisposeAsync().GetAwaiter().GetResult();
+        _messageProducer.DisposeAsync().GetAwaiter().GetResult();
     }
 }
