@@ -1,38 +1,37 @@
 ﻿using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Paramore.Brighter.ActiveMq.Tests.TestDoubles;
 using Paramore.Brighter.ActiveMq.Tests.Utils;
 using Paramore.Brighter.MessagingGateway.ActiveMq;
 using Xunit;
 
-namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Queue.Reactor;
+namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Topic.Proactor;
 
 [Trait("Category", "ActiveMQ")]
-public class ActiveMqBufferedConsumerCloudEventsTestsSync : IDisposable 
+public class ActiveMqBufferedConsumerCloudEventsTestsAsync : IDisposable 
 {
-    private readonly IAmAMessageProducerSync _messageProducer;
-    private readonly IAmAMessageConsumerSync _messageConsumer;
+    private readonly IAmAMessageProducerAsync _messageProducer;
+    private readonly IAmAMessageConsumerAsync _messageConsumer;
     private readonly RoutingKey _routingKey = new(Uuid.NewAsString());
 
-    public ActiveMqBufferedConsumerCloudEventsTestsSync()
+    public ActiveMqBufferedConsumerCloudEventsTestsAsync()
     {
-        var publication = new ActiveMqQueuePublication
+        var publication = new ActiveMqTopicPublication
         {
             Topic = _routingKey
         };
 
         _messageProducer = GatewayFactory.CreateProducer(publication);
         _messageConsumer = GatewayFactory.CreateConsumer(
-            new ActiveMqQueueSubscription("sub-name", 
-                _routingKey.Value,
+            new ActiveMqTopicSubscription("sub-name", 
+                Uuid.NewAsString(),
                 _routingKey, 
                 requestType: typeof(MyCommand),
                 messagePumpType: MessagePumpType.Proactor));
     }
 
     [Fact]
-    public void When_uses_cloud_events()
+    public async Task When_uses_cloud_events_async()
     {
         //Post one more than batch size messages
         var messageOne = new Message(
@@ -43,13 +42,13 @@ public class ActiveMqBufferedConsumerCloudEventsTestsSync : IDisposable
                 Source = new Uri($"/component/{Guid.NewGuid()}", UriKind.RelativeOrAbsolute),
                 DataSchema = new Uri("https://example.com/storage/tenant/container", UriKind.RelativeOrAbsolute)
             }, new MessageBody("test content One"));
-        _messageProducer.Send(messageOne);
+        await _messageProducer.SendAsync(messageOne);
 
         //let them arrive
-        Thread.Sleep(TimeSpan.FromSeconds(1));
+        await Task.Delay(5000);
 
         //Now retrieve messages from the consumer
-        var messages = _messageConsumer.Receive(TimeSpan.FromSeconds(10));
+        var messages = await _messageConsumer.ReceiveAsync(TimeSpan.FromSeconds(10));
 
         //We should only have three messages
         Assert.Single(messages);
@@ -64,8 +63,8 @@ public class ActiveMqBufferedConsumerCloudEventsTestsSync : IDisposable
 
     public void Dispose()
     {
-        _messageConsumer.Purge();
-        _messageConsumer.Dispose();
-        _messageProducer.Dispose();
+        _messageConsumer.PurgeAsync().GetAwaiter().GetResult();
+        _messageConsumer.DisposeAsync().GetAwaiter().GetResult();
+        _messageProducer.DisposeAsync().GetAwaiter().GetResult();
     }
 }

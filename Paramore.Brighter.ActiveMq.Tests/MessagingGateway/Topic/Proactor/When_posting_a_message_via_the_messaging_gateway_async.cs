@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Net.Mime;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
 using Paramore.Brighter.ActiveMq.Tests.TestDoubles;
 using Paramore.Brighter.ActiveMq.Tests.Utils;
@@ -9,28 +8,28 @@ using Paramore.Brighter.JsonConverters;
 using Paramore.Brighter.MessagingGateway.ActiveMq;
 using Xunit;
 
-namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Queue.Reactor;
+namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Topic.Proactor;
 
 [Trait("Category", "ActiveMQ")]
-public class MessageProducerSendSyncTests : IDisposable 
+public class MessageProducerSendAsyncTests : IDisposable 
 {
     private readonly Message _message;
-    private readonly IAmAChannelSync _channel;
-    private readonly IAmAMessageProducerSync _messageProducer;
+    private readonly IAmAChannelAsync _channel;
+    private readonly IAmAMessageProducerAsync _messageProducer;
     private readonly MyCommand _myCommand;
     private readonly Id _correlationId;
 
-    public MessageProducerSendSyncTests()
+    public MessageProducerSendAsyncTests()
     {
         _myCommand = new MyCommand { Value = "Test" };
         _correlationId = Id.Random();
         var contentType = new ContentType(MediaTypeNames.Text.Plain);
         var channelName = Uuid.NewAsString();
-        var publication = new ActiveMqQueuePublication<MyCommand> { Topic = channelName };
+        var publication = new ActiveMqTopicPublication<MyCommand> { Topic = channelName };
 
-        var mqSubscription = new ActiveMqQueueSubscription<MyCommand>(
+        var mqSubscription = new ActiveMqTopicSubscription<MyCommand>(
             subscriptionName: new SubscriptionName(channelName),
-            channelName: new ChannelName(channelName),
+            channelName: new ChannelName(Uuid.NewAsString()),
             routingKey: publication.Topic!,
             messagePumpType: MessagePumpType.Proactor
         );
@@ -41,25 +40,25 @@ public class MessageProducerSendSyncTests : IDisposable
 
         var channelFactory = GatewayFactory.CreateChannel(); 
         
-        _channel = channelFactory.CreateSyncChannel(mqSubscription);
+        _channel = channelFactory.CreateAsyncChannel(mqSubscription);
         _messageProducer = GatewayFactory.CreateProducer(publication);
     }
 
     [Fact]
-    public void When_posting_a_message_via_the_producer()
+    public async Task When_posting_a_message_via_the_producer_async()
     {
         // arrange
-        _channel.Purge();
+        await  _channel.PurgeAsync();
         
         _message.Header.Subject = "test subject";
-        _messageProducer.Send(_message);
+        await _messageProducer.SendAsync(_message);
 
-        Thread.Sleep(TimeSpan.FromSeconds(1));
+        await Task.Delay(1000);
 
-        var message = _channel.Receive(TimeSpan.FromMilliseconds(5000));
+        var message = await _channel.ReceiveAsync(TimeSpan.FromMilliseconds(5000));
 
         // clear the queue
-        _channel.Acknowledge(message);
+        await _channel.AcknowledgeAsync(message);
 
         // should_send_the_message_to_aws_sqs
         Assert.Equal(MessageType.MT_COMMAND, message.Header.MessageType);
@@ -85,7 +84,7 @@ public class MessageProducerSendSyncTests : IDisposable
 
     public void Dispose()
     {
-        _messageProducer.Dispose();
+        _messageProducer.DisposeAsync().GetAwaiter().GetResult();
         _channel.Dispose();
     }
 }

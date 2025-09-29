@@ -5,7 +5,7 @@ using Paramore.Brighter.ActiveMq.Tests.Utils;
 using Paramore.Brighter.MessagingGateway.ActiveMq;
 using Xunit;
 
-namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Queue.Proactor;
+namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Topic.Proactor;
 
 [Trait("Category", "ActiveMQ")]
 public class ActiveMqBufferedConsumerMultipleMessagesTestsAsync : IDisposable
@@ -17,16 +17,16 @@ public class ActiveMqBufferedConsumerMultipleMessagesTestsAsync : IDisposable
 
     public ActiveMqBufferedConsumerMultipleMessagesTestsAsync()
     {
-        var publication = new ActiveMqQueuePublication
+        var publication = new ActiveMqTopicPublication
         {
             Topic = _routingKey,
         };
 
         _messageProducer = GatewayFactory.CreateProducer(publication);
         _messageConsumer = GatewayFactory.CreateConsumer(
-            new ActiveMqQueueSubscription(
+            new ActiveMqTopicSubscription(
                 "sub-name",
-                _routingKey.Value,
+                Uuid.NewAsString(),
                 _routingKey,
                 bufferSize: BatchSize,
                 messagePumpType: MessagePumpType.Proactor,

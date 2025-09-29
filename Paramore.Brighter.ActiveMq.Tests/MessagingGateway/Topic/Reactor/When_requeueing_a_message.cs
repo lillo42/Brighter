@@ -1,14 +1,13 @@
 ﻿using System;
 using System.Net.Mime;
 using System.Text.Json;
-using System.Threading;
 using Paramore.Brighter.ActiveMq.Tests.TestDoubles;
 using Paramore.Brighter.ActiveMq.Tests.Utils;
 using Paramore.Brighter.JsonConverters;
 using Paramore.Brighter.MessagingGateway.ActiveMq;
 using Xunit;
 
-namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Queue.Reactor;
+namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Topic.Reactor;
 
 [Trait("Category", "ActiveMQ")]
 public class MessageProducerRequeueTestsSync : IDisposable
@@ -23,12 +22,11 @@ public class MessageProducerRequeueTestsSync : IDisposable
         var myCommand = new MyCommand { Value = "Test" };
         string correlationId = Uuid.NewAsString();
         var contentType = new ContentType(MediaTypeNames.Text.Plain);
-        var channelName = Uuid.NewAsString();
-        var routingKey = new RoutingKey(channelName);
+        var routingKey = new RoutingKey(Uuid.NewAsString());
 
-        var subscription = new ActiveMqQueueSubscription<MyCommand>(
-            subscriptionName: new SubscriptionName(channelName),
-            channelName: new ChannelName(channelName),
+        var subscription = new ActiveMqTopicSubscription<MyCommand>(
+            subscriptionName: new SubscriptionName(routingKey.Value),
+            channelName: new ChannelName(Uuid.NewAsString()),
             routingKey: routingKey,
             messagePumpType: MessagePumpType.Proactor,
             makeChannels: OnMissingChannel.Create
@@ -40,7 +38,7 @@ public class MessageProducerRequeueTestsSync : IDisposable
         );
 
         var channelFactory = GatewayFactory.CreateChannel();
-        _sender = GatewayFactory.CreateProducer(new ActiveMqQueuePublication { Topic = routingKey });
+        _sender = GatewayFactory.CreateProducer(new ActiveMqTopicPublication { Topic = routingKey });
         _channel = channelFactory.CreateSyncChannel(subscription);
     }
 

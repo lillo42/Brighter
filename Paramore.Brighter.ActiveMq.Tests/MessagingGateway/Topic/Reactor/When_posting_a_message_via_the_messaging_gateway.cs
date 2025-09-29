@@ -2,14 +2,13 @@
 using System.Net.Mime;
 using System.Text.Json;
 using System.Threading;
-using System.Threading.Tasks;
 using Paramore.Brighter.ActiveMq.Tests.TestDoubles;
 using Paramore.Brighter.ActiveMq.Tests.Utils;
 using Paramore.Brighter.JsonConverters;
 using Paramore.Brighter.MessagingGateway.ActiveMq;
 using Xunit;
 
-namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Queue.Reactor;
+namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Topic.Reactor;
 
 [Trait("Category", "ActiveMQ")]
 public class MessageProducerSendSyncTests : IDisposable 
@@ -26,11 +25,11 @@ public class MessageProducerSendSyncTests : IDisposable
         _correlationId = Id.Random();
         var contentType = new ContentType(MediaTypeNames.Text.Plain);
         var channelName = Uuid.NewAsString();
-        var publication = new ActiveMqQueuePublication<MyCommand> { Topic = channelName };
+        var publication = new ActiveMqTopicPublication<MyCommand> { Topic = channelName };
 
-        var mqSubscription = new ActiveMqQueueSubscription<MyCommand>(
+        var mqSubscription = new ActiveMqTopicSubscription<MyCommand>(
             subscriptionName: new SubscriptionName(channelName),
-            channelName: new ChannelName(channelName),
+            channelName: new ChannelName(Uuid.NewAsString()),
             routingKey: publication.Topic!,
             messagePumpType: MessagePumpType.Proactor
         );

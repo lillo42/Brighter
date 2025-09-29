@@ -1,12 +1,11 @@
 ﻿using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Paramore.Brighter.ActiveMq.Tests.TestDoubles;
 using Paramore.Brighter.ActiveMq.Tests.Utils;
 using Paramore.Brighter.MessagingGateway.ActiveMq;
 using Xunit;
 
-namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Queue.Reactor;
+namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Topic.Reactor;
 
 [Trait("Category", "ActiveMQ")]
 public class ActiveMqBufferedConsumerCloudEventsTestsSync : IDisposable 
@@ -17,15 +16,15 @@ public class ActiveMqBufferedConsumerCloudEventsTestsSync : IDisposable
 
     public ActiveMqBufferedConsumerCloudEventsTestsSync()
     {
-        var publication = new ActiveMqQueuePublication
+        var publication = new ActiveMqTopicPublication
         {
             Topic = _routingKey
         };
 
         _messageProducer = GatewayFactory.CreateProducer(publication);
         _messageConsumer = GatewayFactory.CreateConsumer(
-            new ActiveMqQueueSubscription("sub-name", 
-                _routingKey.Value,
+            new ActiveMqTopicSubscription("sub-name", 
+                Uuid.NewAsString(),
                 _routingKey, 
                 requestType: typeof(MyCommand),
                 messagePumpType: MessagePumpType.Proactor));

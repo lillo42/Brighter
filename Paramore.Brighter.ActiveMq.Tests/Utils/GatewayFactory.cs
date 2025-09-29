@@ -30,6 +30,6 @@ public static class GatewayFactory
     }
     
     public static ActiveMqChannelFactory CreateChannel() => new(s_connection);
-    public static ActiveMqMessageProducer CreateQueueProducer(ActiveMqPublication publication) => new(s_connection.GetConnection(), publication, s_connection.TimeProvider);
-    public static ActiveMqMessageConsumer CreateQueueConsumer(ActiveMqSubscription subscription) => new(s_connection.GetConnection(), subscription);
+    public static ActiveMqMessageProducer CreateProducer(ActiveMqPublication publication) => new(s_connection.GetConnection(), publication, s_connection.TimeProvider);
+    public static ActiveMqMessageConsumer CreateConsumer(ActiveMqSubscription subscription) => new(s_connection.GetConnection(), subscription);
 }

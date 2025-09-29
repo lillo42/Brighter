@@ -41,7 +41,7 @@ public class MessageProducerSendAsyncTests : IDisposable
         var channelFactory = GatewayFactory.CreateChannel(); 
         
         _channel = channelFactory.CreateAsyncChannel(mqSubscription);
-        _messageProducer = GatewayFactory.CreateQueueProducer(publication);
+        _messageProducer = GatewayFactory.CreateProducer(publication);
     }
 
     [Fact]

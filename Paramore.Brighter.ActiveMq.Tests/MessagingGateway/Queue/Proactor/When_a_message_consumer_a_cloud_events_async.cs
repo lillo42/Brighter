@@ -21,8 +21,8 @@ public class ActiveMqBufferedConsumerCloudEventsTestsAsync : IDisposable
             Topic = _routingKey
         };
 
-        _messageProducer = GatewayFactory.CreateQueueProducer(publication);
-        _messageConsumer = GatewayFactory.CreateQueueConsumer(
+        _messageProducer = GatewayFactory.CreateProducer(publication);
+        _messageConsumer = GatewayFactory.CreateConsumer(
             new ActiveMqQueueSubscription("sub-name", 
                 _routingKey.Value,
                 _routingKey, 

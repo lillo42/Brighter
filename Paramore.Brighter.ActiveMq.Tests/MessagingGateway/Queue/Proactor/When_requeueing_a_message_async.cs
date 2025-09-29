@@ -39,7 +39,7 @@ public class MessageProducerRequeueTestsAsync : IDisposable
         );
 
         var channelFactory = GatewayFactory.CreateChannel();
-        _sender = GatewayFactory.CreateQueueProducer(new ActiveMqQueuePublication { Topic = routingKey });
+        _sender = GatewayFactory.CreateProducer(new ActiveMqQueuePublication { Topic = routingKey });
         _channel = channelFactory.CreateAsyncChannel(subscription);
     }
 

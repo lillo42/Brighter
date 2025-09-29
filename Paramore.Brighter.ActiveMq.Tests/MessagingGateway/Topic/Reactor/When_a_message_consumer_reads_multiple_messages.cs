@@ -1,32 +1,32 @@
 ﻿using System;
-using System.Threading.Tasks;
+using System.Threading;
 using Paramore.Brighter.ActiveMq.Tests.TestDoubles;
 using Paramore.Brighter.ActiveMq.Tests.Utils;
 using Paramore.Brighter.MessagingGateway.ActiveMq;
 using Xunit;
 
-namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Queue.Proactor;
+namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Topic.Reactor;
 
 [Trait("Category", "ActiveMQ")]
-public class ActiveMqBufferedConsumerMultipleMessagesTestsAsync : IDisposable
+public class ActiveMqBufferedConsumerMultipleMessagesTestsSync : IDisposable
 {
-    private readonly IAmAMessageProducerAsync _messageProducer;
-    private readonly IAmAMessageConsumerAsync _messageConsumer;
+    private readonly IAmAMessageProducerSync _messageProducer;
+    private readonly IAmAMessageConsumerSync _messageConsumer;
     private readonly RoutingKey _routingKey = new(Guid.NewGuid().ToString());
     private const int BatchSize = 3;
 
-    public ActiveMqBufferedConsumerMultipleMessagesTestsAsync()
+    public ActiveMqBufferedConsumerMultipleMessagesTestsSync()
     {
-        var publication = new ActiveMqQueuePublication
+        var publication = new ActiveMqTopicPublication
         {
             Topic = _routingKey,
         };
 
         _messageProducer = GatewayFactory.CreateProducer(publication);
         _messageConsumer = GatewayFactory.CreateConsumer(
-            new ActiveMqQueueSubscription(
+            new ActiveMqTopicSubscription(
                 "sub-name",
-                _routingKey.Value,
+                Uuid.NewAsString(),
                 _routingKey,
                 bufferSize: BatchSize,
                 messagePumpType: MessagePumpType.Proactor,
@@ -36,36 +36,36 @@ public class ActiveMqBufferedConsumerMultipleMessagesTestsAsync : IDisposable
     }
 
     [Fact]
-    public async Task When_a_message_consumer_reads_multiple_messages_async()
+    public void When_a_message_consumer_reads_multiple_messages()
     {
         //Post one more than batch size messages
         var messageOne = new Message(new MessageHeader(Id.Random(), _routingKey, MessageType.MT_COMMAND), new MessageBody("test content One"));
-        await _messageProducer.SendAsync(messageOne);
+        _messageProducer.Send(messageOne);
         var messageTwo = new Message(new MessageHeader(Id.Random(), _routingKey, MessageType.MT_COMMAND), new MessageBody("test content Two"));
-        await _messageProducer.SendAsync(messageTwo);
+        _messageProducer.Send(messageTwo);
         var messageThree = new Message(new MessageHeader(Id.Random(), _routingKey, MessageType.MT_COMMAND), new MessageBody("test content Three"));
-        await _messageProducer.SendAsync(messageThree);
+        _messageProducer.Send(messageThree);
         var messageFour = new Message(new MessageHeader(Id.Random(), _routingKey, MessageType.MT_COMMAND), new MessageBody("test content Four"));
-        await _messageProducer.SendAsync(messageFour);
+        _messageProducer.Send(messageFour);
 
         //let them arrive
-        await Task.Delay(1000);
+        Thread.Sleep(TimeSpan.FromSeconds(5));
 
         for (var i = 0; i < BatchSize; i++)
         {
             //Now retrieve messages from the consumer
-            var messages = await _messageConsumer.ReceiveAsync(TimeSpan.FromMilliseconds(5000));
+            var messages = _messageConsumer.Receive(TimeSpan.FromMilliseconds(5000));
             
             Assert.Single(messages);
             Assert.NotEqual(MessageType.MT_NONE, messages[0].Header.MessageType);
-            await _messageConsumer.AcknowledgeAsync(messages[0]);
+            _messageConsumer.Acknowledge(messages[0]);
         }
     }
 
     public void Dispose()
     {
-        _messageConsumer.PurgeAsync().GetAwaiter().GetResult();
-        _messageProducer.DisposeAsync().GetAwaiter().GetResult();
-        _messageConsumer.DisposeAsync().GetAwaiter().GetResult();
+        _messageConsumer.Purge();
+        _messageProducer.Dispose();
+        _messageConsumer.Dispose();
     }
 }

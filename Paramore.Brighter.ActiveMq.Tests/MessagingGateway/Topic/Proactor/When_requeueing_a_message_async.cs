@@ -1,24 +1,23 @@
 ﻿using System;
 using System.Net.Mime;
 using System.Text.Json;
-using System.Threading;
+using System.Threading.Tasks;
 using Paramore.Brighter.ActiveMq.Tests.TestDoubles;
 using Paramore.Brighter.ActiveMq.Tests.Utils;
 using Paramore.Brighter.JsonConverters;
 using Paramore.Brighter.MessagingGateway.ActiveMq;
 using Xunit;
 
-namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Queue.Reactor;
+namespace Paramore.Brighter.ActiveMq.Tests.MessagingGateway.Topic.Proactor;
 
 [Trait("Category", "ActiveMQ")]
-public class MessageProducerRequeueTestsSync : IDisposable
+public class MessageProducerRequeueTestsAsync : IDisposable
 {
-    private readonly IAmAMessageProducerSync _sender;
-    private Message? _receivedMessage;
-    private readonly IAmAChannelSync _channel;
+    private readonly IAmAMessageProducerAsync _sender;
+    private readonly IAmAChannelAsync _channel;
     private readonly Message _message;
 
-    public MessageProducerRequeueTestsSync()
+    public MessageProducerRequeueTestsAsync()
     {
         var myCommand = new MyCommand { Value = "Test" };
         string correlationId = Uuid.NewAsString();
@@ -26,9 +25,9 @@ public class MessageProducerRequeueTestsSync : IDisposable
         var channelName = Uuid.NewAsString();
         var routingKey = new RoutingKey(channelName);
 
-        var subscription = new ActiveMqQueueSubscription<MyCommand>(
+        var subscription = new ActiveMqTopicSubscription<MyCommand>(
             subscriptionName: new SubscriptionName(channelName),
-            channelName: new ChannelName(channelName),
+            channelName: new ChannelName(Uuid.NewAsString()),
             routingKey: routingKey,
             messagePumpType: MessagePumpType.Proactor,
             makeChannels: OnMissingChannel.Create
@@ -40,29 +39,29 @@ public class MessageProducerRequeueTestsSync : IDisposable
         );
 
         var channelFactory = GatewayFactory.CreateChannel();
-        _sender = GatewayFactory.CreateProducer(new ActiveMqQueuePublication { Topic = routingKey });
-        _channel = channelFactory.CreateSyncChannel(subscription);
+        _sender = GatewayFactory.CreateProducer(new ActiveMqTopicPublication { Topic = routingKey });
+        _channel = channelFactory.CreateAsyncChannel(subscription);
     }
 
     [Fact]
-    public void When_requeueing_a_message()
+    public async Task When_requeueing_a_message_async()
     {
-        _channel.Purge(); 
+        await _channel.PurgeAsync();
         
-        _sender.Send(_message);
-        _receivedMessage = _channel.Receive(TimeSpan.FromSeconds(5));
-        _channel.Requeue(_receivedMessage);
+        await _sender.SendAsync(_message);
+        var receivedMessage = await _channel.ReceiveAsync(TimeSpan.FromSeconds(5));
+        await _channel.RequeueAsync(receivedMessage);
 
-        var requeuedMessage = _channel.Receive(TimeSpan.FromMinutes(1));
+        var requeuedMessage = await _channel.ReceiveAsync(TimeSpan.FromMinutes(1));
         Assert.NotEqual(MessageType.MT_NONE, requeuedMessage.Header.MessageType);
             
-        _channel.Acknowledge(requeuedMessage);
-        Assert.Equal(_receivedMessage.Body.Value, requeuedMessage .Body.Value);
+        await _channel.AcknowledgeAsync(requeuedMessage);
+        Assert.Equal(receivedMessage.Body.Value, requeuedMessage.Body.Value);
     }
 
     public void Dispose()
     {
-        _sender.Dispose();
+        _sender.DisposeAsync().GetAwaiter().GetResult();
         _channel.Dispose();
     }
 }
